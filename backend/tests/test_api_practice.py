@@ -3,7 +3,7 @@ import pytest
 from app.models.classroom import Classroom, ClassEnrollment
 from app.models.skill import Skill
 from app.models.assignment import Assignment
-from app.services.adaptation import SESSION_TOTAL, GROUP_SIZE
+from app.services.adaptation import SESSION_TOTAL, GROUP_SIZE, get_session_config
 
 
 @pytest.fixture()
@@ -74,6 +74,7 @@ class TestPracticeFlow:
         assert "correct_answer" in fb
         assert "session_progress" in fb
         assert fb["session_progress"]["total"] == SESSION_TOTAL
+        assert fb["session_progress"]["answered"] == 1  # no off-by-one
 
     def test_full_session_completes_at_15(self, client, auth_student, classroom_with_assignment):
         """Run a full 15-problem session and verify it completes correctly."""

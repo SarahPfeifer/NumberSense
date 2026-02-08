@@ -574,55 +574,35 @@ export function ArrayModel({ rows, cols, maxDisplay = 12, showDimensions = false
   const displayRows = Math.min(rows, maxDisplay);
   const displayCols = Math.min(cols, maxDisplay);
 
-  // highlight = { type: 'double', baseRows: N } or { type: 'half', keepRows: N }
-  // 'double': first baseRows rows in primary color, remaining in accent color
-  // 'half':   first keepRows rows solid, remaining rows faded out
+  // Distributive-property highlight: splits *columns* into two groups.
+  // highlight = { type: 'distributive', leftCols: N, rightCols: M, rows: R }
+  //   Left columns → primary color (indigo)
+  //   Right columns → accent color (amber)
+  // This shows, e.g., 6×11 as 6×10 (purple) + 6×1 (gold).
+  const isDistributive = highlight && highlight.type === 'distributive';
+  const leftCols = isDistributive ? highlight.leftCols : displayCols;
+
   const getDotStyle = (dotIndex) => {
-    if (!highlight) return {};
-    const row = Math.floor(dotIndex / displayCols);
-
-    if (highlight.type === 'double') {
-      const base = highlight.baseRows || Math.floor(displayRows / 2);
-      if (row >= base) {
-        return { background: '#F59E0B' }; // amber for the "extra" doubled rows
-      }
-      return {}; // primary color (from CSS)
+    if (!isDistributive) return {};
+    const col = dotIndex % displayCols;
+    if (col >= leftCols) {
+      return { background: '#F59E0B' }; // amber for the right partition
     }
-
-    if (highlight.type === 'half') {
-      const keep = highlight.keepRows || Math.ceil(displayRows / 2);
-      if (row >= keep) {
-        return { opacity: 0.2 }; // faded for the "removed" half
-      }
-      return {};
-    }
-
-    return {};
+    return {}; // primary indigo from CSS
   };
 
-  // Label for the highlight sections
+  // Label showing the two partial products
   const highlightLabel = (() => {
-    if (!highlight) return null;
-    if (highlight.type === 'double') {
-      const base = highlight.baseRows || Math.floor(displayRows / 2);
-      const extra = displayRows - base;
-      return (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 6, fontSize: 11, fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>
-          <span style={{ color: '#4F46E5' }}>● {base} rows</span>
-          <span style={{ color: '#D97706' }}>● +{extra} rows (double)</span>
-        </div>
-      );
-    }
-    if (highlight.type === 'half') {
-      const keep = highlight.keepRows || Math.ceil(displayRows / 2);
-      return (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 6, fontSize: 11, fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>
-          <span style={{ color: '#4F46E5' }}>● {keep} rows (half)</span>
-          <span style={{ color: '#D1D5DB' }}>○ {displayRows - keep} rows</span>
-        </div>
-      );
-    }
-    return null;
+    if (!isDistributive) return null;
+    const r = highlight.rows || displayRows;
+    const lc = highlight.leftCols;
+    const rc = highlight.rightCols;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 6, fontSize: 11, fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>
+        <span style={{ color: '#4F46E5' }}>● {r} &times; {lc}</span>
+        <span style={{ color: '#D97706' }}>● {r} &times; {rc}</span>
+      </div>
+    );
   })();
 
   return (

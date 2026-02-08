@@ -22,6 +22,12 @@
   --ns-red-500: #EF4444;
   --ns-red-600: #DC2626;
 
+  --ns-blue-100: #DBEAFE;
+  --ns-blue-600: #2563EB;
+
+  --ns-orange-100: #FFEDD5;
+  --ns-orange-600: #EA580C;
+
   --ns-gray-50:  #F9FAFB;
   --ns-gray-100: #F3F4F6;
   --ns-gray-200: #E5E7EB;
@@ -109,6 +115,8 @@ a:hover { text-decoration: underline; }
 .badge-red    { background: var(--ns-red-100); color: var(--ns-red-600); }
 .badge-gray   { background: var(--ns-gray-100); color: var(--ns-gray-600); }
 .badge-indigo { background: var(--ns-indigo-100); color: var(--ns-indigo-700); }
+.badge-blue   { background: var(--ns-blue-100); color: var(--ns-blue-600); }
+.badge-orange { background: var(--ns-orange-100); color: var(--ns-orange-600); }
 
 /* ─── Tables ───────────────────────────────────────── */
 .table-wrapper { overflow-x: auto; }

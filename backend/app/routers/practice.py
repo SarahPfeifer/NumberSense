@@ -21,12 +21,10 @@ from app.schemas.practice import (
 from app.services.problem_generator import generate_problem
 from app.services.adaptation import (
     adapt_after_group, compute_visual_trend,
-    SESSION_TOTAL, GROUP_SIZE, NUM_GROUPS, get_group_number, is_group_boundary,
+    get_session_config, get_group_number, is_group_boundary,
 )
 
 router = APIRouter(prefix="/api/practice", tags=["practice"])
-
-SESSION_PROBLEM_COUNT = SESSION_TOTAL  # 15 problems, 5 groups of 3
 
 
 @router.post("/start", response_model=SessionOut)
@@ -130,6 +128,12 @@ def get_next_problem(
     assignment = db.query(Assignment).filter(Assignment.id == session.assignment_id).first()
     skill = db.query(Skill).filter(Skill.id == assignment.skill_id).first()
 
+    # Derive session structure from the skill's problem type
+    cfg = get_session_config(skill.problem_type)
+    session_total = cfg["session_total"]
+    group_size = cfg["group_size"]
+    num_groups = cfg["num_groups"]
+
     # Current sequence
     attempt_count = (
         db.query(StudentAttempt)
@@ -139,22 +143,35 @@ def get_next_problem(
     sequence = attempt_count + 1
 
     # Hard stop: do not generate beyond the session limit
-    if sequence > SESSION_PROBLEM_COUNT:
+    if sequence > session_total:
         session.is_complete = True
         db.commit()
         raise HTTPException(status_code=400, detail="Session already complete")
 
     # ── Group-based difficulty & visual support ──
-    # Every problem in a group uses the SAME difficulty and visual level.
-    # The session's difficulty_level and visual_support_level are updated
-    # at group boundaries (after answering the last problem in a group).
-    # This means within a group the student gets a consistent experience,
-    # and changes only happen between groups.
     difficulty = session.difficulty_level
     vis_level = session.visual_support_level
     show_visual = vis_level >= 2  # level 1 = no visual
 
-    problem = generate_problem(skill.problem_type, difficulty, skill.config)
+    # Build generation config — for multiplication_facts, include which
+    # facts the student has already seen this session so the picker
+    # prioritises unseen facts for better coverage.
+    gen_config = dict(skill.config or {})
+    if skill.problem_type == "multiplication_facts":
+        prev_attempts = (
+            db.query(StudentAttempt)
+            .filter(StudentAttempt.session_id == session.id)
+            .all()
+        )
+        seen_facts = set()
+        for pa in prev_attempts:
+            factors = (pa.problem_data or {}).get("factors")
+            if factors and len(factors) == 2:
+                seen_facts.add((min(factors[0], factors[1]),
+                                max(factors[0], factors[1])))
+        gen_config["seen_facts"] = seen_facts
+
+    problem = generate_problem(skill.problem_type, difficulty, gen_config)
     problem_id = str(uuid.uuid4())
 
     # Store problem in the attempt (unanswered)
@@ -173,12 +190,11 @@ def get_next_problem(
     db.commit()
 
     # Strip correct answer and feedback explanation from response
-    # (feedback_explanation is only shown after answering, via the feedback object)
     problem_display = {k: v for k, v in problem.items() if k not in ("correct_answer", "feedback_explanation")}
     if not show_visual:
         problem_display.pop("visual_hint", None)
 
-    group = get_group_number(sequence)
+    group = get_group_number(sequence, group_size, num_groups)
 
     return ProblemOut(
         problem_id=problem_id,
@@ -189,8 +205,9 @@ def get_next_problem(
         sequence_number=sequence,
         session_id=session.id,
         group_number=group,
-        group_size=GROUP_SIZE,
-        total_groups=NUM_GROUPS,
+        group_size=group_size,
+        total_groups=num_groups,
+        session_total=session_total,
     )
 
 
@@ -210,6 +227,13 @@ def submit_answer(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Look up skill early — needed for session config and adaptation
+    assignment = db.query(Assignment).filter(Assignment.id == session.assignment_id).first()
+    skill = db.query(Skill).filter(Skill.id == assignment.skill_id).first()
+    cfg = get_session_config(skill.problem_type if skill else "default")
+    session_total = cfg["session_total"]
+    group_size = cfg["group_size"]
+
     attempt = db.query(StudentAttempt).filter(
         StudentAttempt.id == req.problem_id,
         StudentAttempt.session_id == session.id,
@@ -225,11 +249,9 @@ def submit_answer(
 
     # Build instructional feedback
     problem_data = attempt.problem_data
-    # Build a complete visual hint for feedback (may include answer data)
     feedback_hint = dict(problem_data.get("visual_hint", {}))
     ptype = problem_data.get("type", "")
     if ptype == "equivalent_fractions":
-        # For feedback, always include full target fraction so bar renders correctly
         if problem_data.get("missing") == "numerator":
             feedback_hint["right_numerator"] = int(attempt.correct_answer)
         else:
@@ -250,6 +272,10 @@ def submit_answer(
 
     attempt.feedback_given = feedback
 
+    # Flush so the count queries below see the current attempt's updated
+    # student_answer and is_correct (SessionLocal uses autoflush=False).
+    db.flush()
+
     # Update session stats
     session.total_problems = (
         db.query(StudentAttempt)
@@ -266,12 +292,9 @@ def submit_answer(
     seq = attempt.sequence_number
 
     # ── Adaptation at group boundaries ──
-    # After the last problem in each group (every GROUP_SIZE answers),
-    # evaluate THAT GROUP's performance and adjust for the next group.
     adaptation_reason = ""
-    if is_group_boundary(seq) and seq < SESSION_PROBLEM_COUNT:
-        # Get this group's attempts
-        group_start = seq - GROUP_SIZE + 1
+    if is_group_boundary(seq, group_size) and seq < session_total:
+        group_start = seq - group_size + 1
         group_attempts = (
             db.query(StudentAttempt)
             .filter(
@@ -286,10 +309,7 @@ def submit_answer(
         group_correct = [a.is_correct for a in group_attempts]
         group_times = [a.response_time_ms for a in group_attempts if a.response_time_ms]
 
-        assignment = db.query(Assignment).filter(Assignment.id == session.assignment_id).first()
-        skill = db.query(Skill).filter(Skill.id == assignment.skill_id).first()
         max_diff = skill.difficulty_max if skill else 5
-
         result = adapt_after_group(
             group_correct, group_times,
             session.difficulty_level, session.visual_support_level, max_diff,
@@ -299,7 +319,7 @@ def submit_answer(
         adaptation_reason = result.reason
 
     # Check completion
-    remaining = max(0, SESSION_PROBLEM_COUNT - total_answered)
+    remaining = max(0, session_total - total_answered)
     if remaining == 0:
         session.is_complete = True
         session.completed_at = datetime.now(timezone.utc)
@@ -325,7 +345,7 @@ def submit_answer(
         next_visual_level=session.visual_support_level,
         adaptation_reason=adaptation_reason,
         session_progress={
-            "total": SESSION_PROBLEM_COUNT,
+            "total": session_total,
             "correct": session.correct_count,
             "answered": total_answered,
             "remaining": remaining,

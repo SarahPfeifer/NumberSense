@@ -34,6 +34,7 @@ class ProblemOut(BaseModel):
     group_number: int = 1       # which group (1-5)
     group_size: int = 3         # problems per group
     total_groups: int = 5       # total groups in session
+    session_total: int = 15     # total problems in session (varies by skill)
 
 
 class SubmitAnswerRequest(BaseModel):

@@ -51,6 +51,7 @@ def classroom_overview(
         ).all()
 
         per_student = []
+        skill_max_diff = skill.difficulty_max if skill else 5
         for sid in student_ids:
             s_sessions = [s for s in sessions if s.student_id == sid]
             if not s_sessions:
@@ -59,8 +60,14 @@ def classroom_overview(
                     "student_name": f"{students[sid].first_name} {students[sid].last_name}" if sid in students else "Unknown",
                     "accuracy": None,
                     "avg_time_ms": None,
-                    "fluency_status": "red",
+                    "fluency_status": compute_fluency_status(
+                        0, 0,
+                        sessions_completed=0,
+                        max_difficulty_reached=0,
+                        skill_max_difficulty=skill_max_diff,
+                    ),
                     "sessions_completed": 0,
+                    "max_difficulty": 0,
                 })
                 continue
             total_correct = sum(s.correct_count for s in s_sessions)
@@ -68,13 +75,20 @@ def classroom_overview(
             acc = total_correct / total_problems if total_problems else 0
             times = [s.avg_response_time_ms for s in s_sessions if s.avg_response_time_ms]
             avg_t = sum(times) / len(times) if times else 0
+            max_diff = max(s.difficulty_level for s in s_sessions)
             per_student.append({
                 "student_id": str(sid),
                 "student_name": f"{students[sid].first_name} {students[sid].last_name}" if sid in students else "Unknown",
                 "accuracy": round(acc * 100, 1),
                 "avg_time_ms": round(avg_t, 0),
-                "fluency_status": compute_fluency_status(acc, avg_t),
+                "fluency_status": compute_fluency_status(
+                    acc, avg_t,
+                    sessions_completed=len(s_sessions),
+                    max_difficulty_reached=max_diff,
+                    skill_max_difficulty=skill_max_diff,
+                ),
                 "sessions_completed": len(s_sessions),
+                "max_difficulty": max_diff,
             })
 
         total_acc = 0
@@ -142,6 +156,7 @@ def student_progress(
             .all()
         )
 
+        skill_max_diff = skill.difficulty_max if skill else 5
         if not sessions:
             skill_progress.append({
                 "skill_name": skill.name,
@@ -149,7 +164,13 @@ def student_progress(
                 "sessions_completed": 0,
                 "overall_accuracy": 0,
                 "avg_response_time_ms": 0,
-                "fluency_status": "red",
+                "fluency_status": compute_fluency_status(
+                    0, 0,
+                    sessions_completed=0,
+                    max_difficulty_reached=0,
+                    skill_max_difficulty=skill_max_diff,
+                ),
+                "max_difficulty": 0,
                 "visual_support_trend": "stable",
                 "growth": [],
             })
@@ -161,6 +182,7 @@ def student_progress(
         times = [s.avg_response_time_ms for s in sessions if s.avg_response_time_ms]
         avg_t = sum(times) / len(times) if times else 0
         visual_levels = [s.visual_support_level for s in sessions]
+        max_diff = max(s.difficulty_level for s in sessions)
 
         growth = []
         for s in sessions:
@@ -179,7 +201,13 @@ def student_progress(
             "sessions_completed": len(sessions),
             "overall_accuracy": round(acc * 100, 1),
             "avg_response_time_ms": round(avg_t, 0),
-            "fluency_status": compute_fluency_status(acc, avg_t),
+            "fluency_status": compute_fluency_status(
+                acc, avg_t,
+                sessions_completed=len(sessions),
+                max_difficulty_reached=max_diff,
+                skill_max_difficulty=skill_max_diff,
+            ),
+            "max_difficulty": max_diff,
             "visual_support_trend": compute_visual_trend(visual_levels),
             "growth": growth,
         })

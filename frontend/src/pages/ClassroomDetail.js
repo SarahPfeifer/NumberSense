@@ -3,8 +3,26 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import api from '../services/api';
 
-const FLUENCY_COLORS = { green: 'badge-green', yellow: 'badge-yellow', red: 'badge-red' };
-const FLUENCY_LABELS = { green: 'Fluent', yellow: 'Developing', red: 'Needs Support' };
+const FLUENCY_COLORS = {
+  fluent: 'badge-green',
+  progressing: 'badge-blue',
+  developing: 'badge-yellow',
+  needs_support: 'badge-red',
+  needs_data: 'badge-orange',
+  not_started: 'badge-gray',
+  // Legacy fallback
+  green: 'badge-green', yellow: 'badge-yellow', red: 'badge-red',
+};
+const FLUENCY_LABELS = {
+  fluent: 'Fluent',
+  progressing: 'Progressing',
+  developing: 'Developing',
+  needs_support: 'Needs Support',
+  needs_data: 'Needs More Data',
+  not_started: 'Not Started',
+  // Legacy fallback
+  green: 'Fluent', yellow: 'Developing', red: 'Needs Support',
+};
 
 export default function ClassroomDetail() {
   const { id } = useParams();
@@ -117,6 +135,7 @@ export default function ClassroomDetail() {
                           <th>Accuracy</th>
                           <th>Avg Time</th>
                           <th>Sessions</th>
+                          <th>Level</th>
                           <th>Status</th>
                         </tr>
                       </thead>
@@ -128,6 +147,7 @@ export default function ClassroomDetail() {
                             <td>{s.accuracy !== null ? `${s.accuracy}%` : '—'}</td>
                             <td>{s.avg_time_ms ? `${(s.avg_time_ms / 1000).toFixed(1)}s` : '—'}</td>
                             <td>{s.sessions_completed}</td>
+                            <td>{s.max_difficulty ? `${s.max_difficulty}/5` : '—'}</td>
                             <td>
                               <span className={`badge ${FLUENCY_COLORS[s.fluency_status] || 'badge-gray'}`}>
                                 {FLUENCY_LABELS[s.fluency_status] || s.fluency_status}

@@ -11,7 +11,6 @@ PROBLEM_TYPES = [
     "fraction_number_line",
     "integer_addition",
     "integer_subtraction",
-    "integer_magnitude",
     "integer_number_line",
     "multiplication_facts",
     "multiplication_scaling",
@@ -120,3 +119,40 @@ class TestFractionProblems:
         p = generate_problem("fraction_comparison_benchmark", 2)
         assert p["visual_hint"]["type"] == "fraction_bars"
         assert "left_numerator" in p["visual_hint"]
+
+
+class TestMultiplicationCoverage:
+    """The coverage-aware picker should avoid repeating facts when unseen ones exist."""
+
+    def test_avoids_repeats_when_possible(self):
+        """With seen_facts passed in, the picker should prefer unseen facts."""
+        # At difficulty 1, focus = [0,1,2], so all facts are from {0,1,2}×{0,1,2}
+        # That's 6 unique normalised facts: (0,0),(0,1),(0,2),(1,1),(1,2),(2,2)
+        seen = set()
+        for _ in range(6):
+            p = generate_problem("multiplication_facts", 1, {"seen_facts": seen})
+            a, b = p["factors"]
+            pair = (min(a, b), max(a, b))
+            seen.add(pair)
+
+        # After 6 draws, every unique fact at level 1 should have been seen
+        assert len(seen) == 6
+
+    def test_allows_repeats_after_full_coverage(self):
+        """Once all facts are seen, the picker should still work (allow repeats)."""
+        all_facts = {(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)}
+        # This should not raise — repeats are allowed after full coverage
+        p = generate_problem("multiplication_facts", 1, {"seen_facts": all_facts})
+        assert "factors" in p
+
+    def test_level_5_has_high_factors(self):
+        """At difficulty 5, the picker should include 9-12."""
+        saw_high = set()
+        for _ in range(50):
+            p = generate_problem("multiplication_facts", 5, {})
+            a, b = p["factors"]
+            for f in [a, b]:
+                if f >= 9:
+                    saw_high.add(f)
+        assert 9 in saw_high, "Never saw factor 9 at difficulty 5"
+        assert 12 in saw_high, "Never saw factor 12 at difficulty 5"

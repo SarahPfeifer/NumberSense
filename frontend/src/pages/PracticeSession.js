@@ -4,8 +4,6 @@ import Navbar from '../components/common/Navbar';
 import VisualModel from '../components/student/VisualModels';
 import api from '../services/api';
 
-const TOTAL_PROBLEMS = 15;
-
 export default function PracticeSession() {
   const { assignmentId } = useParams();
   const navigate = useNavigate();
@@ -110,7 +108,8 @@ export default function PracticeSession() {
     );
   }
 
-  const progress = feedback?.session_progress || { total: TOTAL_PROBLEMS, answered: problem.sequence_number - 1, correct: 0 };
+  const sessionTotal = problem.session_total || 15;
+  const progress = feedback?.session_progress || { total: sessionTotal, answered: problem.sequence_number - 1, correct: 0 };
   const progressPct = (progress.answered / progress.total) * 100;
   const pd = problem.problem_data;
   const hasChoices = pd.choices && pd.choices.length > 0;
@@ -151,7 +150,7 @@ export default function PracticeSession() {
         </div>
         <div className="flex-between text-sm text-muted" style={{ marginBottom: '1rem' }}>
           <span>Set {groupNum} of {totalGroups} &middot; Question {posInGroup} of {groupSize}</span>
-          <span>{problem.sequence_number} / {TOTAL_PROBLEMS}</span>
+          <span>{problem.sequence_number} / {sessionTotal}</span>
         </div>
 
         <div className="practice-card">

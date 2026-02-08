@@ -70,17 +70,6 @@ SKILLS = [
     },
     {
         "domain": "integers",
-        "name": "Magnitude & Distance from Zero",
-        "slug": "integer-magnitude",
-        "description": "Compare integers by absolute value and distance from zero.",
-        "grade_level": 5,
-        "difficulty_min": 1,
-        "difficulty_max": 5,
-        "problem_type": "integer_magnitude",
-        "display_order": 2,
-    },
-    {
-        "domain": "integers",
         "name": "Adding Integers",
         "slug": "integer-addition",
         "description": "Add positive and negative integers using number line reasoning.",
@@ -88,7 +77,7 @@ SKILLS = [
         "difficulty_min": 1,
         "difficulty_max": 5,
         "problem_type": "integer_addition",
-        "display_order": 3,
+        "display_order": 2,
     },
     {
         "domain": "integers",
@@ -99,7 +88,7 @@ SKILLS = [
         "difficulty_min": 1,
         "difficulty_max": 5,
         "problem_type": "integer_subtraction",
-        "display_order": 4,
+        "display_order": 3,
     },
 
     # ── MULTIPLICATION FLUENCY ─────────────────────────────
@@ -128,7 +117,7 @@ SKILLS = [
 ]
 
 
-REMOVED_SLUGS = ["multiplication-related-facts"]
+REMOVED_SLUGS = ["multiplication-related-facts", "integer-magnitude"]
 
 
 def seed_skills(db: Session):
@@ -144,13 +133,20 @@ def seed_skills(db: Session):
             if existing.display_order != skill_data["display_order"]:
                 existing.display_order = skill_data["display_order"]
 
-    # Clean up removed skills (only if they have no assignments)
+    # Clean up removed skills and their dependent data
+    from app.models.attempt import PracticeSession, StudentAttempt
+
     for slug in REMOVED_SLUGS:
         old = db.query(Skill).filter(Skill.slug == slug).first()
         if old:
-            has_assignments = db.query(Assignment).filter(Assignment.skill_id == old.id).first()
-            if not has_assignments:
-                db.delete(old)
+            assignments = db.query(Assignment).filter(Assignment.skill_id == old.id).all()
+            for a in assignments:
+                sessions = db.query(PracticeSession).filter(PracticeSession.assignment_id == a.id).all()
+                for s in sessions:
+                    db.query(StudentAttempt).filter(StudentAttempt.session_id == s.id).delete()
+                    db.delete(s)
+                db.delete(a)
+            db.delete(old)
 
     db.commit()
 

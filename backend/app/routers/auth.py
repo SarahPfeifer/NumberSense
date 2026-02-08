@@ -45,9 +45,15 @@ def class_code_login(req: ClassCodeLogin, db: Session = Depends(get_db)):
     for enrollment in enrollments:
         student = db.query(User).filter(User.id == enrollment.student_id).first()
         if student:
-            full = f"{student.first_name} {student.last_name[0]}".lower()
-            uname = (student.username or "").lower()
-            if identifier == full or identifier == uname or identifier == student.first_name.lower():
+            # Match against several natural forms of the student's name
+            candidates = {
+                student.first_name.lower(),                                    # "sarah"
+                f"{student.first_name} {student.last_name}".lower(),           # "sarah pfeifer"
+                f"{student.first_name} {student.last_name[0]}".lower(),        # "sarah p"
+                (student.username or "").lower(),                               # "sarah.pfeifer"
+                f"{student.last_name}, {student.first_name}".lower(),          # "pfeifer, sarah"
+            }
+            if identifier in candidates:
                 token = create_access_token({"sub": str(student.id), "role": "student"})
                 return TokenResponse(access_token=token, user=UserOut.model_validate(student))
 

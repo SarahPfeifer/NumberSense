@@ -18,7 +18,6 @@ def generate_problem(problem_type: str, difficulty: int, config: dict = None) ->
         "fraction_number_line": _fraction_number_line,
         "integer_addition": _integer_addition,
         "integer_subtraction": _integer_subtraction,
-        "integer_magnitude": _integer_magnitude,
         "integer_number_line": _integer_number_line,
         "multiplication_facts": _multiplication_facts,
         "multiplication_scaling": _multiplication_scaling,
@@ -394,44 +393,6 @@ def _integer_subtraction(difficulty: int, config: dict) -> dict:
     }
 
 
-def _integer_magnitude(difficulty: int, config: dict) -> dict:
-    """Compare absolute values / reason about magnitude."""
-    lo, hi = _int_range(difficulty)
-    a = random.randint(lo, hi)
-    b = random.randint(lo, hi)
-    while a == b:
-        b = random.randint(lo, hi)
-
-    question_type = random.choice(["closer_to_zero", "farther_from_zero", "compare"])
-    if question_type == "closer_to_zero":
-        correct = str(a) if abs(a) < abs(b) else str(b)
-        prompt = f"Which is closer to zero: {a} or {b}?"
-    elif question_type == "farther_from_zero":
-        correct = str(a) if abs(a) > abs(b) else str(b)
-        prompt = f"Which is farther from zero: {a} or {b}?"
-    else:
-        if a > b:
-            correct = ">"
-        else:
-            correct = "<"
-        prompt = f"Compare: {a} ___ {b}"
-
-    return {
-        "type": "integer_magnitude",
-        "prompt": prompt,
-        "values": [a, b],
-        "question_type": question_type,
-        "choices": [str(a), str(b)] if question_type != "compare" else ["<", "=", ">"],
-        "correct_answer": correct,
-        "visual_hint": {
-            "type": "number_line",
-            "points": [a, b, 0],
-            "line_min": min(a, b, 0) - 5,
-            "line_max": max(a, b, 0) + 5,
-        },
-        "feedback_explanation": f"|{a}| = {abs(a)}, |{b}| = {abs(b)}",
-    }
-
 
 def _integer_number_line(difficulty: int, config: dict) -> dict:
     lo, hi = _int_range(difficulty)
@@ -495,26 +456,53 @@ _MULT_FACTS_LEVELS = {
 }
 
 
-def _pick_mult_factors(difficulty: int) -> Tuple[int, int]:
-    """Pick two factors for a multiplication facts problem.
-
-    ~70% of the time one factor comes from the focus set (new facts).
-    ~30% of the time both factors come from the review set (spiral review).
-    The second factor is always drawn from the full pool (focus + review)
-    so students see the new number combined with all previously learned facts.
-    """
+def _all_facts_for_level(difficulty: int):
+    """Return (focus_facts, review_facts) as sets of normalised (min,max) tuples."""
     level = max(1, min(5, difficulty))
     focus, review = _MULT_FACTS_LEVELS[level]
     full_pool = focus + review
 
-    if review and random.random() < 0.30:
-        # Pure review problem
-        a = random.choice(review)
-        b = random.choice(review)
+    # Focus facts: at least one factor from the focus set, paired with anything in the pool
+    focus_facts = set()
+    for f in focus:
+        for p in full_pool:
+            focus_facts.add((min(f, p), max(f, p)))
+
+    # Review facts: both factors from the review set
+    review_facts = set()
+    for r1 in review:
+        for r2 in review:
+            review_facts.add((min(r1, r2), max(r1, r2)))
+
+    return focus_facts, review_facts
+
+
+def _pick_mult_factors(difficulty: int, seen_facts: set = None) -> Tuple[int, int]:
+    """Coverage-aware picker for multiplication facts.
+
+    Tracks which (normalised) facts the student has already seen in this
+    session and prefers unseen facts so every session explores new ground.
+
+    ~70 % of problems feature a *focus* factor (the new fact family).
+    ~30 % are pure review of previously mastered facts.
+    Within each category, unseen facts are chosen first; once all have
+    been shown at least once, repeats are allowed.
+    """
+    focus_facts, review_facts = _all_facts_for_level(difficulty)
+    seen = seen_facts or set()
+
+    unseen_focus = focus_facts - seen
+    unseen_review = review_facts - seen
+
+    # Decide category: review (30 %) or focus (70 %)
+    do_review = bool(review_facts) and random.random() < 0.30
+
+    if do_review:
+        pool = list(unseen_review) if unseen_review else list(review_facts)
     else:
-        # Focus problem: one factor from focus set, other from full pool
-        a = random.choice(focus)
-        b = random.choice(full_pool) if full_pool else random.choice(focus)
+        pool = list(unseen_focus) if unseen_focus else list(focus_facts)
+
+    a, b = random.choice(pool)
 
     # Randomly swap so the focus number isn't always first
     if random.random() < 0.5:
@@ -522,27 +510,63 @@ def _pick_mult_factors(difficulty: int) -> Tuple[int, int]:
     return a, b
 
 
+def _distributive_split(n: int):
+    """Split n into two 'friendly' addends for the distributive property.
+
+    Returns (left_cols, right_cols) where left_cols + right_cols == n,
+    chosen so each part is easy to multiply mentally:
+      - n >= 11 → (10, n-10)        e.g. 11→(10,1), 12→(10,2)
+      - n in {6..10} → (5, n-5)     e.g. 7→(5,2), 10→(5,5)
+      - n == 5 → (3, 2)             "I know ×3 and ×2"
+      - n == 4 → (2, 2)             doubles
+      - n == 3 → (2, 1)             "doubles + 1 more"
+      - n <= 2 → None               too small to benefit
+    """
+    if n >= 11:
+        return (10, n - 10)
+    if 6 <= n <= 10:
+        return (5, n - 5)
+    if n == 5:
+        return (3, 2)
+    if n == 4:
+        return (2, 2)
+    if n == 3:
+        return (2, 1)
+    return None
+
+
 def _multiplication_facts(difficulty: int, config: dict) -> dict:
-    a, b = _pick_mult_factors(difficulty)
+    seen_raw = config.get("seen_facts")
+    seen = set()
+    if seen_raw:
+        seen = {(min(a, b), max(a, b)) for a, b in seen_raw}
+    a, b = _pick_mult_factors(difficulty, seen)
     correct = a * b
 
-    # Build visual hint with optional doubling/halving highlight.
-    # When the number of rows (a) is even, show the array as two halves
-    # so students can see doubling/halving relationships visually.
-    hint = {
+    # Build the array model with the smaller factor as rows so the
+    # visual reads naturally (e.g. 3 rows × 7 columns for 3×7).
+    rows, cols = (a, b) if a <= b else (b, a)
+
+    hint: dict = {
         "type": "array_model",
-        "rows": a,
-        "cols": b,
+        "rows": rows,
+        "cols": cols,
     }
 
-    if a >= 4 and a % 2 == 0:
-        # Show the array as "half + half" (doubling relationship)
-        # e.g. 6×4: first 3 rows in primary color, next 3 rows in accent
-        hint["highlight"] = {"type": "double", "baseRows": a // 2}
-    elif a >= 3 and a % 2 == 1 and a > 1:
-        # Odd rows ≥ 3: show as (a-1) rows + 1 extra row
-        # e.g. 5×3: four rows primary + one row accent (shows "plus one more group")
-        hint["highlight"] = {"type": "double", "baseRows": a - 1}
+    # Distributive-property highlight: split the *columns* (the larger
+    # factor) into two friendly parts so students see, for example:
+    #   6 × 11  →  6 rows × 10 cols (purple)  +  6 rows × 1 col (gold)
+    #   3 × 7   →  3 rows × 5 cols (purple)   +  3 rows × 2 cols (gold)
+    # Only applied when the column count is large enough to benefit.
+    split = _distributive_split(cols)
+    if split and rows >= 2:
+        left_cols, right_cols = split
+        hint["highlight"] = {
+            "type": "distributive",
+            "leftCols": left_cols,
+            "rightCols": right_cols,
+            "rows": rows,
+        }
 
     return {
         "type": "multiplication_facts",
@@ -551,48 +575,6 @@ def _multiplication_facts(difficulty: int, config: dict) -> dict:
         "correct_answer": str(correct),
         "visual_hint": hint,
         "feedback_explanation": f"{a} × {b} = {correct}",
-    }
-
-
-def _multiplication_related_facts(difficulty: int, config: dict) -> dict:
-    """Given a known fact, derive a related fact."""
-    lo, hi = _mult_range(difficulty)
-    a = random.randint(max(lo, 2), hi)
-    b = random.randint(max(lo, 2), hi)
-    known_product = a * b
-
-    # Related fact variations
-    variation = random.choice(["double", "half", "plus_one", "commutative"])
-    if variation == "double":
-        prompt = f"If {a} × {b} = {known_product}, what is {a*2} × {b}?"
-        correct = str(a * 2 * b)
-        explanation = f"{a*2} × {b} = 2 × ({a} × {b}) = 2 × {known_product} = {a*2*b}"
-    elif variation == "half" and a % 2 == 0:
-        prompt = f"If {a} × {b} = {known_product}, what is {a//2} × {b}?"
-        correct = str(a // 2 * b)
-        explanation = f"{a//2} × {b} = half of ({a} × {b}) = {known_product} ÷ 2 = {a//2*b}"
-    elif variation == "plus_one":
-        prompt = f"If {a} × {b} = {known_product}, what is {a+1} × {b}?"
-        correct = str((a + 1) * b)
-        explanation = f"{a+1} × {b} = {a} × {b} + {b} = {known_product} + {b} = {(a+1)*b}"
-    else:  # commutative
-        prompt = f"If {a} × {b} = {known_product}, what is {b} × {a}?"
-        correct = str(known_product)
-        explanation = f"{b} × {a} = {a} × {b} = {known_product} (commutative property)"
-
-    return {
-        "type": "multiplication_related_facts",
-        "prompt": prompt,
-        "known_fact": {"a": a, "b": b, "product": known_product},
-        "variation": variation,
-        "correct_answer": correct,
-        "visual_hint": {
-            "type": "array_model",
-            "rows": a,
-            "cols": b,
-            "highlight_variation": variation,
-        },
-        "feedback_explanation": explanation,
     }
 
 

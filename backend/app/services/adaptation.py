@@ -40,9 +40,22 @@ SPEED_FAST_MS = 12000   # under 12s per problem = "reasonably fast"
 SPEED_SLOW_MS = 20000   # over 20s per problem = "slow" (for dashboard)
 
 # ── Session structure ────────────────────────────────────
+# Defaults (used by most skills)
 SESSION_TOTAL = 15
 GROUP_SIZE = 3
 NUM_GROUPS = SESSION_TOTAL // GROUP_SIZE  # 5 groups
+
+# Per-problem-type overrides.
+# Multiplication facts need more reps to cover the fact space at each level.
+_SESSION_CONFIGS = {
+    "multiplication_facts": {"session_total": 25, "group_size": 5, "num_groups": 5},
+}
+_DEFAULT_SESSION_CONFIG = {"session_total": SESSION_TOTAL, "group_size": GROUP_SIZE, "num_groups": NUM_GROUPS}
+
+
+def get_session_config(problem_type: str) -> dict:
+    """Return (session_total, group_size, num_groups) for a given problem type."""
+    return dict(_SESSION_CONFIGS.get(problem_type, _DEFAULT_SESSION_CONFIG))
 
 
 @dataclass
@@ -52,14 +65,14 @@ class AdaptationResult:
     reason: str           # human-readable explanation
 
 
-def get_group_number(sequence_number: int) -> int:
+def get_group_number(sequence_number: int, group_size: int = GROUP_SIZE, num_groups: int = NUM_GROUPS) -> int:
     """Return 1-based group number for a given 1-based sequence number."""
-    return min(NUM_GROUPS, ((sequence_number - 1) // GROUP_SIZE) + 1)
+    return min(num_groups, ((sequence_number - 1) // group_size) + 1)
 
 
-def is_group_boundary(sequence_number: int) -> bool:
+def is_group_boundary(sequence_number: int, group_size: int = GROUP_SIZE) -> bool:
     """Return True if this sequence number is the last problem in a group."""
-    return sequence_number % GROUP_SIZE == 0
+    return sequence_number % group_size == 0
 
 
 VISUAL_RESET_ON_DIFFICULTY_UP = 4  # when difficulty increases, reset visuals here
@@ -153,15 +166,17 @@ def adapt_after_group(
             f"Holding difficulty {current_difficulty}, visuals {current_visual_level}."
         )
 
-    # ── Rule 4: Struggling (0/3 or 1/3) → retreat ──
-    elif num_correct <= 1:
+    # ── Rule 4: Struggling (< 45 % correct) → retreat ──
+    # With 3-problem groups: 0/3 or 1/3 triggers retreat.
+    # With 5-problem groups: 0/5, 1/5, or 2/5 triggers retreat.
+    elif accuracy < 0.45:
         new_diff, new_vis = _retreat(current_difficulty, current_visual_level)
         reason = (
             f"Struggling ({num_correct}/{total}). "
             f"Adjusting to difficulty {new_diff}, visuals {new_vis}."
         )
 
-    # ── Middle ground (shouldn't happen with 3-problem groups, but safety) ──
+    # ── Middle ground (e.g. 3/5 = 60 %) → hold steady ──
     else:
         reason = (
             f"Mixed results ({num_correct}/{total}, avg {avg_time/1000:.1f}s). "
@@ -171,19 +186,51 @@ def adapt_after_group(
     return AdaptationResult(new_diff, new_vis, reason)
 
 
-def compute_fluency_status(accuracy: float, avg_time_ms: float) -> str:
+def compute_fluency_status(
+    accuracy: float,
+    avg_time_ms: float,
+    *,
+    sessions_completed: int = 0,
+    max_difficulty_reached: int = 0,
+    skill_max_difficulty: int = 5,
+    min_sessions_for_fluent: int = 3,
+) -> str:
     """
-    Return a fluency status color for teacher dashboard.
-    Green  = fluent (high accuracy + reasonable speed)
-    Yellow = developing
-    Red    = needs intervention
+    Return a fluency status for teacher dashboard.
+
+    Statuses (in order of mastery):
+      not_started  — 0 completed sessions
+      needs_data   — fewer than 2 completed sessions
+      needs_support — accuracy < 50 %
+      developing   — accuracy 50-84 %, or < 3 sessions
+      progressing  — accuracy >= 85 % but hasn't reached max difficulty
+      fluent       — accuracy >= 85 %, fast enough, AND reached max difficulty
+
+    For multiplication facts this means a student can't be "fluent"
+    until they have successfully practiced 9–12 s (difficulty 5).
     """
-    if accuracy >= 0.85 and avg_time_ms <= SPEED_SLOW_MS:
-        return "green"
-    elif accuracy >= 0.50:
-        return "yellow"
-    else:
-        return "red"
+    if sessions_completed == 0:
+        return "not_started"
+
+    if sessions_completed < 2:
+        return "needs_data"
+
+    if accuracy < 0.50:
+        return "needs_support"
+
+    if accuracy < 0.85 or sessions_completed < min_sessions_for_fluent:
+        return "developing"
+
+    # Accurate (>= 85 %) with enough sessions — check difficulty coverage
+    if max_difficulty_reached < skill_max_difficulty:
+        return "progressing"
+
+    # Reached max difficulty + high accuracy — check speed
+    if avg_time_ms <= SPEED_SLOW_MS:
+        return "fluent"
+
+    # Accurate at max difficulty but still slow
+    return "progressing"
 
 
 def compute_visual_trend(visual_levels: List[int]) -> str:

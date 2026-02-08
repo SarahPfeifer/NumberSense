@@ -3,8 +3,24 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import api from '../services/api';
 
-const FLUENCY_COLORS = { green: 'badge-green', yellow: 'badge-yellow', red: 'badge-red' };
-const FLUENCY_LABELS = { green: 'Fluent', yellow: 'Developing', red: 'Needs Support' };
+const FLUENCY_COLORS = {
+  fluent: 'badge-green',
+  progressing: 'badge-blue',
+  developing: 'badge-yellow',
+  needs_support: 'badge-red',
+  needs_data: 'badge-orange',
+  not_started: 'badge-gray',
+  green: 'badge-green', yellow: 'badge-yellow', red: 'badge-red',
+};
+const FLUENCY_LABELS = {
+  fluent: 'Fluent',
+  progressing: 'Progressing',
+  developing: 'Developing',
+  needs_support: 'Needs Support',
+  needs_data: 'Needs More Data',
+  not_started: 'Not Started',
+  green: 'Fluent', yellow: 'Developing', red: 'Needs Support',
+};
 const TREND_LABELS = { decreasing: 'Decreasing (good)', stable: 'Stable', increasing: 'Increasing' };
 
 export default function StudentDrillDown() {
@@ -51,7 +67,7 @@ export default function StudentDrillDown() {
               </div>
 
               {/* Stats Row */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginTop: '1rem', padding: '1rem', background: 'var(--ns-gray-50)', borderRadius: 'var(--ns-radius)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', marginTop: '1rem', padding: '1rem', background: 'var(--ns-gray-50)', borderRadius: 'var(--ns-radius)' }}>
                 <div>
                   <div className="text-sm text-muted">Sessions</div>
                   <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{skill.sessions_completed}</div>
@@ -64,6 +80,12 @@ export default function StudentDrillDown() {
                   <div className="text-sm text-muted">Avg Speed</div>
                   <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>
                     {skill.avg_response_time_ms ? `${(skill.avg_response_time_ms / 1000).toFixed(1)}s` : '—'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted">Max Level</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>
+                    {skill.max_difficulty ? `${skill.max_difficulty}/5` : '—'}
                   </div>
                 </div>
                 <div>
