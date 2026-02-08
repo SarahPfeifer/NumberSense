@@ -200,7 +200,7 @@ function pickStep(range) {
 
 /** Generate clean tick values between min and max. */
 function generateTicks(min, max, options = {}) {
-  const { forceStep, fractionDenom } = options;
+  const { forceStep, fractionDenom, everyInteger } = options;
   const range = max - min;
 
   // Fraction number lines: tick every 1/denom
@@ -212,7 +212,22 @@ function generateTicks(min, max, options = {}) {
     return ticks;
   }
 
-  // Integer number lines: always integer labels
+  // Integer add/sub number lines: tick every whole number
+  if (everyInteger) {
+    const ticks = [];
+    const intMin = Math.ceil(min);
+    const intMax = Math.floor(max);
+    // Determine label frequency: label every tick if ≤25, else label key values
+    const count = intMax - intMin + 1;
+    const labelEvery = count <= 25 ? 1 : count <= 50 ? 2 : 5;
+    for (let v = intMin; v <= intMax; v++) {
+      const showLabel = v === intMin || v === intMax || v === 0 || v % labelEvery === 0;
+      ticks.push({ value: v, label: showLabel ? String(v) : '' });
+    }
+    return ticks;
+  }
+
+  // Generic integer number lines: spaced labels
   const step = forceStep || pickStep(range);
   const start = Math.ceil(min / step) * step;
   const ticks = [];
@@ -231,10 +246,10 @@ function generateTicks(min, max, options = {}) {
 
 // ─── Static Number Line ─────────────────────────────────
 
-export function NumberLine({ min, max, points, marker, fractionDenom, startVal, moveVal }) {
+export function NumberLine({ min, max, points, marker, fractionDenom, startVal, moveVal, everyInteger }) {
   const range = max - min;
   const getPos = (val) => Math.max(0, Math.min(100, ((val - min) / range) * 100));
-  const ticks = generateTicks(min, max, { fractionDenom });
+  const ticks = generateTicks(min, max, { fractionDenom, everyInteger });
 
   // For integer addition/subtraction: show the "hop" arc
   const showHop = startVal !== undefined && moveVal !== undefined && moveVal !== 0;
@@ -346,17 +361,19 @@ export function NumberLine({ min, max, points, marker, fractionDenom, startVal, 
 //              THEN drag from it to the answer.
 //   Level 1:   No visual shown at all (handled upstream).
 
-export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionDenom, visualLevel = 5 }) {
+export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionDenom, visualLevel = 5, everyInteger }) {
   const svgRef = useRef(null);
   const showStartGiven = visualLevel >= 4;
+  // Phases: place_start → (if wrong) retry_start → drag
   const [phase, setPhase] = useState(showStartGiven ? 'drag' : 'place_start');
   const [placedStart, setPlacedStart] = useState(showStartGiven ? startVal : null);
   const [dragging, setDragging] = useState(false);
   const [dragVal, setDragVal] = useState(null);
+  const [wrongAttempt, setWrongAttempt] = useState(null); // tracks the incorrect placement
 
   const range = max - min;
   const getPos = (val) => Math.max(0, Math.min(100, ((val - min) / range) * 100));
-  const ticks = generateTicks(min, max, { fractionDenom });
+  const ticks = generateTicks(min, max, { fractionDenom, everyInteger });
 
   const snap = useCallback((val) => {
     if (fractionDenom) {
@@ -379,16 +396,25 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
     e.preventDefault();
     const val = getValFromX(e.clientX);
 
-    if (phase === 'place_start') {
-      setPlacedStart(val);
-      setPhase('drag');
+    if (phase === 'place_start' || phase === 'retry_start') {
+      if (val === startVal) {
+        // Correct placement — advance to drag
+        setPlacedStart(val);
+        setWrongAttempt(null);
+        setPhase('drag');
+      } else {
+        // Wrong placement — show the incorrect point and prompt retry
+        setWrongAttempt(val);
+        setPlacedStart(null);
+        setPhase('retry_start');
+      }
       return;
     }
     // drag phase
     setDragging(true);
     setDragVal(val);
     svgRef.current?.setPointerCapture?.(e.pointerId);
-  }, [getValFromX, phase]);
+  }, [getValFromX, phase, startVal]);
 
   const handlePointerMove = useCallback((e) => {
     if (!dragging) return;
@@ -411,17 +437,17 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
     return () => svg.removeEventListener('touchmove', prevent);
   }, [dragging]);
 
-  const activeStart = placedStart !== null ? placedStart : startVal;
+  // Only show the placed start in drag phase (after correct placement)
+  const activeStart = phase === 'drag' ? (placedStart !== null ? placedStart : startVal) : null;
   const moveVal = dragVal !== null && activeStart !== null ? dragVal - activeStart : 0;
   const hopEnd = dragVal;
   const showArc = dragVal !== null && activeStart !== null && dragVal !== activeStart;
 
-  // Did the student place the start incorrectly?
-  const startPlacedWrong = phase === 'drag' && !showStartGiven && placedStart !== null && placedStart !== startVal;
+  const isPlacing = phase === 'place_start' || phase === 'retry_start';
 
   return (
     <div className="visual-model">
-      {/* Prominent instruction banner for place-start phase */}
+      {/* First attempt — generic instruction */}
       {phase === 'place_start' && (
         <div style={{
           background: '#EEF2FF', border: '2px solid #6366F1', borderRadius: 8,
@@ -429,7 +455,18 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
           fontSize: 14, fontWeight: 700, color: '#4338CA',
           fontFamily: 'Inter, sans-serif',
         }}>
-          Step 1: Tap the number line to place <span style={{ fontSize: 18 }}>{startVal}</span>
+          Step 1: Find the starting number on the number line and tap to place your point
+        </div>
+      )}
+      {/* Retry — tell them it was wrong, let them try again */}
+      {phase === 'retry_start' && (
+        <div style={{
+          background: '#FEF2F2', border: '2px solid #EF4444', borderRadius: 8,
+          padding: '8px 16px', textAlign: 'center', marginBottom: 8,
+          fontSize: 14, fontWeight: 700, color: '#DC2626',
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          Not quite — that's {wrongAttempt}. Look carefully and tap again to place the starting point.
         </div>
       )}
       {phase === 'drag' && dragVal === null && (
@@ -439,16 +476,12 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
           fontSize: 14, fontWeight: 700, color: '#166534',
           fontFamily: 'Inter, sans-serif',
         }}>
+          {!showStartGiven && (
+            <span style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 2 }}>
+              ✓ Starting point placed correctly!
+            </span>
+          )}
           Step 2: Drag on the line to show your answer
-        </div>
-      )}
-      {startPlacedWrong && (
-        <div style={{
-          background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8,
-          padding: '6px 12px', textAlign: 'center', marginBottom: 6,
-          fontSize: 12, color: '#DC2626', fontFamily: 'Inter, sans-serif',
-        }}>
-          The starting number is {startVal} — try to place it more carefully next time!
         </div>
       )}
       <svg
@@ -457,7 +490,7 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
         style={{
           width: '100%', maxWidth: 500, display: 'block', margin: '0 auto',
           overflow: 'visible',
-          cursor: phase === 'place_start' ? 'crosshair' : dragging ? 'grabbing' : 'pointer',
+          cursor: isPlacing ? 'crosshair' : dragging ? 'grabbing' : 'pointer',
           touchAction: 'none',
         }}
         onPointerDown={handlePointerDown}
@@ -467,14 +500,6 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
       >
         {/* Track */}
         <line x1="20" y1="45" x2="480" y2="45" stroke="#D1D5DB" strokeWidth="2.5" />
-
-        {/* Pulsing guide for place-start phase */}
-        {phase === 'place_start' && (
-          <circle cx="250" cy="45" r="12" fill="none" stroke="#6366F1" strokeWidth="2" opacity="0.4">
-            <animate attributeName="r" values="8;16;8" dur="1.5s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.5;0.15;0.5" dur="1.5s" repeatCount="indefinite" />
-          </circle>
-        )}
 
         {/* Ticks + labels */}
         {ticks.map((t, i) => {
@@ -492,7 +517,20 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
           );
         })}
 
-        {/* Start position (shown or student-placed) */}
+        {/* Wrong attempt marker (faded, with X) — shown during retry */}
+        {phase === 'retry_start' && wrongAttempt !== null && (
+          <g opacity="0.5">
+            <circle cx={20 + (getPos(wrongAttempt) / 100) * 460} cy={45} r="7" fill="#EF4444" />
+            <line x1={20 + (getPos(wrongAttempt) / 100) * 460 - 4} y1={41}
+              x2={20 + (getPos(wrongAttempt) / 100) * 460 + 4} y2={49}
+              stroke="white" strokeWidth="2" />
+            <line x1={20 + (getPos(wrongAttempt) / 100) * 460 + 4} y1={41}
+              x2={20 + (getPos(wrongAttempt) / 100) * 460 - 4} y2={49}
+              stroke="white" strokeWidth="2" />
+          </g>
+        )}
+
+        {/* Start position (shown only after correct placement or when given) */}
         {activeStart !== null && (
           <g>
             <circle cx={20 + (getPos(activeStart) / 100) * 460} cy={45} r="7" fill="#4F46E5" />
@@ -532,9 +570,60 @@ export function InteractiveNumberLine({ min, max, startVal, onDragEnd, fractionD
 
 // ─── Array Model ────────────────────────────────────────
 
-export function ArrayModel({ rows, cols, maxDisplay = 12 }) {
+export function ArrayModel({ rows, cols, maxDisplay = 12, showDimensions = false, highlight }) {
   const displayRows = Math.min(rows, maxDisplay);
   const displayCols = Math.min(cols, maxDisplay);
+
+  // highlight = { type: 'double', baseRows: N } or { type: 'half', keepRows: N }
+  // 'double': first baseRows rows in primary color, remaining in accent color
+  // 'half':   first keepRows rows solid, remaining rows faded out
+  const getDotStyle = (dotIndex) => {
+    if (!highlight) return {};
+    const row = Math.floor(dotIndex / displayCols);
+
+    if (highlight.type === 'double') {
+      const base = highlight.baseRows || Math.floor(displayRows / 2);
+      if (row >= base) {
+        return { background: '#F59E0B' }; // amber for the "extra" doubled rows
+      }
+      return {}; // primary color (from CSS)
+    }
+
+    if (highlight.type === 'half') {
+      const keep = highlight.keepRows || Math.ceil(displayRows / 2);
+      if (row >= keep) {
+        return { opacity: 0.2 }; // faded for the "removed" half
+      }
+      return {};
+    }
+
+    return {};
+  };
+
+  // Label for the highlight sections
+  const highlightLabel = (() => {
+    if (!highlight) return null;
+    if (highlight.type === 'double') {
+      const base = highlight.baseRows || Math.floor(displayRows / 2);
+      const extra = displayRows - base;
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 6, fontSize: 11, fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>
+          <span style={{ color: '#4F46E5' }}>● {base} rows</span>
+          <span style={{ color: '#D97706' }}>● +{extra} rows (double)</span>
+        </div>
+      );
+    }
+    if (highlight.type === 'half') {
+      const keep = highlight.keepRows || Math.ceil(displayRows / 2);
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 6, fontSize: 11, fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>
+          <span style={{ color: '#4F46E5' }}>● {keep} rows (half)</span>
+          <span style={{ color: '#D1D5DB' }}>○ {displayRows - keep} rows</span>
+        </div>
+      );
+    }
+    return null;
+  })();
 
   return (
     <div className="visual-model text-center">
@@ -543,19 +632,22 @@ export function ArrayModel({ rows, cols, maxDisplay = 12 }) {
         display: 'inline-grid',
       }}>
         {Array.from({ length: displayRows * displayCols }, (_, i) => (
-          <div key={i} className="array-dot" />
+          <div key={i} className="array-dot" style={getDotStyle(i)} />
         ))}
       </div>
-      <div className="text-sm text-muted" style={{ marginTop: '.5rem' }}>
-        {rows} rows &times; {cols} columns = {rows * cols}
-      </div>
+      {highlightLabel}
+      {showDimensions && (
+        <div className="text-sm text-muted" style={{ marginTop: '.5rem' }}>
+          {rows} rows &times; {cols} columns
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Scaling Bar ────────────────────────────────────────
 
-export function ScalingBar({ base, multiplier }) {
+export function ScalingBar({ base, multiplier, showAnswer = false }) {
   const maxWidth = 280;
   const baseWidth = Math.min(maxWidth, base * 20);
   const resultWidth = Math.min(maxWidth, base * multiplier * 20);
@@ -567,8 +659,219 @@ export function ScalingBar({ base, multiplier }) {
         <div style={{ height: 24, width: baseWidth || 4, background: 'var(--ns-indigo-500)', borderRadius: 4, minWidth: 4 }} />
       </div>
       <div>
-        <div className="text-sm text-muted">Result: {base} &times; {multiplier} = {base * multiplier}</div>
+        <div className="text-sm text-muted">
+          {showAnswer
+            ? `Result: ${base} × ${multiplier} = ${base * multiplier}`
+            : `${base} × ${multiplier}`}
+        </div>
         <div style={{ height: 24, width: resultWidth || 4, background: 'var(--ns-green-500)', borderRadius: 4, minWidth: 4 }} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Yellow / Red Counter Models ────────────────────────
+//
+// Yellow = positive (+1), Red = negative (−1).
+// A yellow + red pair = zero pair (cancel out).
+// Scaffolding:
+//   Static (level 5-4): shows the full solution step-by-step
+//   Interactive (level 3-2): student adds/removes singles & zero pairs
+//   Level 1: no visual (handled upstream)
+
+const CTR_R = 14; // counter circle radius
+const CTR_GAP = 6;
+
+function CounterCircle({ color, x, y, crossed, opacity = 1 }) {
+  const fill = color === 'yellow' ? '#FBBF24' : '#EF4444';
+  const stroke = color === 'yellow' ? '#D97706' : '#B91C1C';
+  return (
+    <g opacity={opacity}>
+      <circle cx={x} cy={y} r={CTR_R} fill={fill} stroke={stroke} strokeWidth="2" />
+      <text x={x} y={y + 1} textAnchor="middle" dominantBaseline="middle"
+        fontSize="13" fontWeight="700" fill={color === 'yellow' ? '#78350F' : '#FFF'}
+        fontFamily="Inter, sans-serif">
+        {color === 'yellow' ? '+' : '−'}
+      </text>
+      {crossed && (
+        <>
+          <line x1={x - CTR_R + 3} y1={y - CTR_R + 3} x2={x + CTR_R - 3} y2={y + CTR_R - 3}
+            stroke="#374151" strokeWidth="2.5" />
+          <line x1={x + CTR_R - 3} y1={y - CTR_R + 3} x2={x - CTR_R + 3} y2={y + CTR_R - 3}
+            stroke="#374151" strokeWidth="2.5" />
+        </>
+      )}
+    </g>
+  );
+}
+
+/** Lay out counters in a row, wrapping after maxPerRow. Returns [{x, y}] */
+function layoutCounters(count, startX, startY, maxPerRow = 10) {
+  const positions = [];
+  const cellW = CTR_R * 2 + CTR_GAP;
+  const cellH = CTR_R * 2 + CTR_GAP;
+  for (let i = 0; i < count; i++) {
+    const col = i % maxPerRow;
+    const row = Math.floor(i / maxPerRow);
+    positions.push({ x: startX + col * cellW + CTR_R, y: startY + row * cellH + CTR_R });
+  }
+  return positions;
+}
+
+/** Static counter model — shows the full solution with zero pairs crossed out. */
+export function CounterModel({ data }) {
+  if (!data) return null;
+  const { start_yellow, start_red, result_yellow, result_red, a, b, operation } = data;
+
+  // Show starting counters + any added counters, then cross out zero pairs
+  const totalYellow = result_yellow;
+  const totalRed = result_red;
+  const zeroPairs = operation === '+'
+    ? Math.min(Math.max(a, 0) + Math.max(b, 0) - result_yellow, Math.abs(Math.min(a, 0)) + Math.abs(Math.min(b, 0)) - result_red)
+    : data.zero_pairs_needed || 0;
+  const showYellow = totalYellow + Math.max(zeroPairs, 0);
+  const showRed = totalRed + Math.max(zeroPairs, 0);
+
+  const maxPerRow = 10;
+  const cellW = CTR_R * 2 + CTR_GAP;
+  const cellH = CTR_R * 2 + CTR_GAP;
+  const yellowRows = Math.ceil(showYellow / maxPerRow) || 0;
+  const redRows = Math.ceil(showRed / maxPerRow) || 0;
+  const yPadding = 30; // space for labels
+  const sectionGap = 12;
+  const totalH = yPadding + yellowRows * cellH + sectionGap + redRows * cellH + 10;
+  const totalW = Math.min(showYellow, maxPerRow, showRed || 1) * cellW + 20;
+  const svgW = Math.max(totalW, 200);
+
+  const yellowPos = layoutCounters(showYellow, 10, yPadding, maxPerRow);
+  const redPos = layoutCounters(showRed, 10, yPadding + yellowRows * cellH + sectionGap, maxPerRow);
+
+  return (
+    <div style={{ textAlign: 'center', marginTop: 8, marginBottom: 4 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 4, fontFamily: 'Inter, sans-serif' }}>
+        Counter Model
+      </div>
+      <svg viewBox={`0 0 ${svgW} ${Math.max(totalH, 60)}`}
+        style={{ width: '100%', maxWidth: svgW, display: 'block', margin: '0 auto', overflow: 'visible' }}>
+        {/* Yellow label */}
+        {showYellow > 0 && (
+          <text x={10} y={yPadding - 6} fontSize="11" fontWeight="600" fill="#D97706" fontFamily="Inter, sans-serif">
+            Positive (+)
+          </text>
+        )}
+        {yellowPos.map((p, i) => (
+          <CounterCircle key={`y-${i}`} color="yellow" x={p.x} y={p.y}
+            crossed={i >= totalYellow} />
+        ))}
+        {/* Red label */}
+        {showRed > 0 && (
+          <text x={10} y={yPadding + yellowRows * cellH + sectionGap - 6}
+            fontSize="11" fontWeight="600" fill="#B91C1C" fontFamily="Inter, sans-serif">
+            Negative (−)
+          </text>
+        )}
+        {redPos.map((p, i) => (
+          <CounterCircle key={`r-${i}`} color="red" x={p.x} y={p.y}
+            crossed={i >= totalRed} />
+        ))}
+      </svg>
+      {zeroPairs > 0 && (
+        <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2, fontFamily: 'Inter, sans-serif' }}>
+          {zeroPairs} zero pair{zeroPairs > 1 ? 's' : ''} cancel out (✕)
+        </div>
+      )}
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginTop: 4, fontFamily: 'Inter, sans-serif' }}>
+        Result: {result_yellow > 0 ? `${result_yellow} yellow` : ''}{result_yellow > 0 && result_red > 0 ? ', ' : ''}{result_red > 0 ? `${result_red} red` : ''}{result_yellow === 0 && result_red === 0 ? '0' : ''} = {data.result}
+      </div>
+    </div>
+  );
+}
+
+/** Interactive counter model — student adds/removes yellow, red, and zero pairs. */
+export function InteractiveCounterModel({ data }) {
+  const initial = data || {};
+  const [yellows, setYellows] = useState(initial.start_yellow || 0);
+  const [reds, setReds] = useState(initial.start_red || 0);
+
+  const value = yellows - reds;
+
+  const maxPerRow = 10;
+  const cellW = CTR_R * 2 + CTR_GAP;
+  const cellH = CTR_R * 2 + CTR_GAP;
+  const yRows = Math.ceil(Math.max(yellows, 1) / maxPerRow);
+  const rRows = Math.ceil(Math.max(reds, 1) / maxPerRow);
+  const yPadding = 28;
+  const sectionGap = 12;
+  const totalH = yPadding + yRows * cellH + sectionGap + rRows * cellH + 10;
+  const svgW = Math.max(maxPerRow * cellW + 20, 200);
+
+  const yellowPos = layoutCounters(yellows, 10, yPadding, maxPerRow);
+  const redPos = layoutCounters(reds, 10, yPadding + yRows * cellH + sectionGap, maxPerRow);
+
+  return (
+    <div style={{ textAlign: 'center', marginTop: 8, marginBottom: 4 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 6, fontFamily: 'Inter, sans-serif' }}>
+        Use counters to model the problem
+      </div>
+
+      {/* Control buttons */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        <button onClick={() => setYellows(y => y + 1)}
+          style={{ padding: '4px 10px', borderRadius: 6, border: '2px solid #D97706', background: '#FEF3C7', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#92400E' }}>
+          + Yellow
+        </button>
+        <button onClick={() => setYellows(y => Math.max(0, y - 1))}
+          style={{ padding: '4px 10px', borderRadius: 6, border: '2px solid #D97706', background: '#FFF7ED', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#92400E' }}>
+          − Yellow
+        </button>
+        <button onClick={() => setReds(r => r + 1)}
+          style={{ padding: '4px 10px', borderRadius: 6, border: '2px solid #B91C1C', background: '#FEE2E2', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#7F1D1D' }}>
+          + Red
+        </button>
+        <button onClick={() => setReds(r => Math.max(0, r - 1))}
+          style={{ padding: '4px 10px', borderRadius: 6, border: '2px solid #B91C1C', background: '#FFF1F2', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#7F1D1D' }}>
+          − Red
+        </button>
+        <button onClick={() => { setYellows(y => y + 1); setReds(r => r + 1); }}
+          style={{ padding: '4px 10px', borderRadius: 6, border: '2px solid #6366F1', background: '#EEF2FF', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#4338CA' }}>
+          + Zero Pair
+        </button>
+        <button onClick={() => {
+          if (yellows > 0 && reds > 0) { setYellows(y => y - 1); setReds(r => r - 1); }
+        }}
+          style={{ padding: '4px 10px', borderRadius: 6, border: '2px solid #6366F1', background: '#F5F3FF', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#4338CA' }}>
+          − Zero Pair
+        </button>
+      </div>
+
+      {/* Counter display */}
+      <svg viewBox={`0 0 ${svgW} ${Math.max(totalH, 50)}`}
+        style={{ width: '100%', maxWidth: svgW, display: 'block', margin: '0 auto', overflow: 'visible' }}>
+        {yellows > 0 && (
+          <text x={10} y={yPadding - 6} fontSize="11" fontWeight="600" fill="#D97706" fontFamily="Inter, sans-serif">
+            Positive: {yellows}
+          </text>
+        )}
+        {yellowPos.map((p, i) => (
+          <CounterCircle key={`y-${i}`} color="yellow" x={p.x} y={p.y} />
+        ))}
+        {reds > 0 && (
+          <text x={10} y={yPadding + yRows * cellH + sectionGap - 6}
+            fontSize="11" fontWeight="600" fill="#B91C1C" fontFamily="Inter, sans-serif">
+            Negative: {reds}
+          </text>
+        )}
+        {redPos.map((p, i) => (
+          <CounterCircle key={`r-${i}`} color="red" x={p.x} y={p.y} />
+        ))}
+      </svg>
+
+      {/* Running total */}
+      <div style={{
+        fontSize: 15, fontWeight: 700, marginTop: 4, fontFamily: 'Inter, sans-serif',
+        color: value > 0 ? '#D97706' : value < 0 ? '#DC2626' : '#6B7280',
+      }}>
+        Value: {yellows} − {reds} = {value}
       </div>
     </div>
   );
@@ -630,28 +933,47 @@ export default function VisualModel({ hint, problemData, interactive, onInteract
     }
 
     case 'number_line': {
+      const nlMin = hint.line_min !== undefined ? hint.line_min : -20;
+      const nlMax = hint.line_max !== undefined ? hint.line_max : 20;
+      const isIntOp = hint.start !== undefined; // integer add/sub has start
+      const counterData = hint.counter_data;
+      // Only show counters when numbers are small enough to be useful (≤20 total)
+      const showCounters = counterData && (Math.abs(counterData.a) + Math.abs(counterData.b) <= 20);
+
       // Interactive mode for addition/subtraction
-      if (interactive && hint.start !== undefined) {
+      if (interactive && isIntOp) {
         return (
-          <InteractiveNumberLine
-            min={hint.line_min !== undefined ? hint.line_min : -20}
-            max={hint.line_max !== undefined ? hint.line_max : 20}
-            startVal={hint.start}
-            onDragEnd={onInteractiveAnswer}
-            visualLevel={vl}
-          />
+          <div>
+            <InteractiveNumberLine
+              min={nlMin}
+              max={nlMax}
+              startVal={hint.start}
+              onDragEnd={onInteractiveAnswer}
+              visualLevel={vl}
+              everyInteger
+            />
+            {showCounters && (
+              <InteractiveCounterModel data={counterData} />
+            )}
+          </div>
         );
       }
 
       // Static display with hop arc (for feedback)
       if (hint.start !== undefined && hint.move !== undefined) {
         return (
-          <NumberLine
-            min={hint.line_min !== undefined ? hint.line_min : -20}
-            max={hint.line_max !== undefined ? hint.line_max : 20}
-            startVal={hint.start}
-            moveVal={hint.move}
-          />
+          <div>
+            <NumberLine
+              min={nlMin}
+              max={nlMax}
+              startVal={hint.start}
+              moveVal={hint.move}
+              everyInteger
+            />
+            {showCounters && (
+              <CounterModel data={counterData} />
+            )}
+          </div>
         );
       }
 
@@ -679,7 +1001,7 @@ export default function VisualModel({ hint, problemData, interactive, onInteract
     }
 
     case 'array_model':
-      return <ArrayModel rows={hint.rows} cols={hint.cols} />;
+      return <ArrayModel rows={hint.rows} cols={hint.cols} highlight={hint.highlight} />;
 
     case 'scaling_bar':
       return <ScalingBar base={hint.base_value} multiplier={hint.multiplier} />;

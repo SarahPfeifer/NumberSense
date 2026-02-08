@@ -16,11 +16,15 @@ Adaptation axes:
      2 = interactive visuals
      1 = no visuals
 
+Advance logic:
+  Visual support is reduced first (5→4→…→1). Once visuals are at 1,
+  difficulty increases AND visual support resets to 4 so that the new
+  harder content is scaffolded again. This creates a spiral:
+    visuals on → visuals off → harder content with visuals on → visuals off → …
+
 Rules (evaluated per group of 3):
-  1. Perfect group (3/3 correct) → ALWAYS advance:
-       reduce visual support by 1, or if already at 1 increase difficulty.
-  2. Fast + accurate (≥2/3 correct, avg < 12s) → advance:
-       reduce visual support first, then increase difficulty.
+  1. Perfect group (3/3 correct) → ALWAYS advance (see above).
+  2. Fast + accurate (≥2/3 correct, avg < 12s) → advance.
   3. Accurate but slow (≥2/3 correct, avg ≥ 12s) → hold steady.
   4. Struggling (0/3 or 1/3 correct) → increase support:
        increase visual support, decrease difficulty.
@@ -58,12 +62,20 @@ def is_group_boundary(sequence_number: int) -> bool:
     return sequence_number % GROUP_SIZE == 0
 
 
+VISUAL_RESET_ON_DIFFICULTY_UP = 4  # when difficulty increases, reset visuals here
+
+
 def _advance(difficulty, visual_level, max_difficulty):
-    """Reduce visual support first; once at minimum, increase difficulty."""
+    """Reduce visual support first; once at minimum, increase difficulty.
+
+    When difficulty increases, visual support resets to VISUAL_RESET_ON_DIFFICULTY_UP
+    so that the new harder content gets scaffolding again. This creates a spiral:
+      visuals on → visuals off → harder + visuals on → visuals off → …
+    """
     if visual_level > 1:
         return difficulty, visual_level - 1
     elif difficulty < max_difficulty:
-        return difficulty + 1, visual_level
+        return difficulty + 1, VISUAL_RESET_ON_DIFFICULTY_UP
     return difficulty, visual_level
 
 

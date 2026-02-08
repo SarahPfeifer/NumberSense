@@ -172,8 +172,9 @@ def get_next_problem(
     db.add(attempt)
     db.commit()
 
-    # Strip correct answer from response
-    problem_display = {k: v for k, v in problem.items() if k not in ("correct_answer",)}
+    # Strip correct answer and feedback explanation from response
+    # (feedback_explanation is only shown after answering, via the feedback object)
+    problem_display = {k: v for k, v in problem.items() if k not in ("correct_answer", "feedback_explanation")}
     if not show_visual:
         problem_display.pop("visual_hint", None)
 

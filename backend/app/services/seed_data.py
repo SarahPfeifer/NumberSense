@@ -56,27 +56,17 @@ SKILLS = [
     },
 
     # ── COMBINING INTEGERS ─────────────────────────────────
+    # Conceptual foundations first, then operations
     {
         "domain": "integers",
-        "name": "Adding Integers",
-        "slug": "integer-addition",
-        "description": "Add positive and negative integers using number line reasoning.",
+        "name": "Integers on a Number Line",
+        "slug": "integer-number-line",
+        "description": "Identify integers on a number line including negative values.",
         "grade_level": 5,
         "difficulty_min": 1,
         "difficulty_max": 5,
-        "problem_type": "integer_addition",
+        "problem_type": "integer_number_line",
         "display_order": 1,
-    },
-    {
-        "domain": "integers",
-        "name": "Subtracting Integers",
-        "slug": "integer-subtraction",
-        "description": "Subtract integers, reasoning about direction on a number line.",
-        "grade_level": 5,
-        "difficulty_min": 1,
-        "difficulty_max": 5,
-        "problem_type": "integer_subtraction",
-        "display_order": 2,
     },
     {
         "domain": "integers",
@@ -87,17 +77,28 @@ SKILLS = [
         "difficulty_min": 1,
         "difficulty_max": 5,
         "problem_type": "integer_magnitude",
+        "display_order": 2,
+    },
+    {
+        "domain": "integers",
+        "name": "Adding Integers",
+        "slug": "integer-addition",
+        "description": "Add positive and negative integers using number line reasoning.",
+        "grade_level": 5,
+        "difficulty_min": 1,
+        "difficulty_max": 5,
+        "problem_type": "integer_addition",
         "display_order": 3,
     },
     {
         "domain": "integers",
-        "name": "Integers on a Number Line",
-        "slug": "integer-number-line",
-        "description": "Identify integers on a number line including negative values.",
+        "name": "Subtracting Integers",
+        "slug": "integer-subtraction",
+        "description": "Subtract integers, reasoning about direction on a number line.",
         "grade_level": 5,
         "difficulty_min": 1,
         "difficulty_max": 5,
-        "problem_type": "integer_number_line",
+        "problem_type": "integer_subtraction",
         "display_order": 4,
     },
 
@@ -115,17 +116,6 @@ SKILLS = [
     },
     {
         "domain": "multiplication",
-        "name": "Related Facts & Fact Families",
-        "slug": "multiplication-related-facts",
-        "description": "Use a known fact to derive related multiplication facts.",
-        "grade_level": 4,
-        "difficulty_min": 1,
-        "difficulty_max": 5,
-        "problem_type": "multiplication_related_facts",
-        "display_order": 2,
-    },
-    {
-        "domain": "multiplication",
         "name": "Multiplication as Scaling",
         "slug": "multiplication-scaling",
         "description": "Understand multiplication as making a number bigger, smaller, or keeping it the same.",
@@ -133,17 +123,35 @@ SKILLS = [
         "difficulty_min": 1,
         "difficulty_max": 5,
         "problem_type": "multiplication_scaling",
-        "display_order": 3,
+        "display_order": 2,
     },
 ]
 
 
+REMOVED_SLUGS = ["multiplication-related-facts"]
+
+
 def seed_skills(db: Session):
-    """Insert skills if not already present."""
+    """Insert skills if not already present, and update display_order for existing ones."""
+    from app.models.assignment import Assignment
+
     for skill_data in SKILLS:
         existing = db.query(Skill).filter(Skill.slug == skill_data["slug"]).first()
         if not existing:
             db.add(Skill(**skill_data))
+        else:
+            # Keep display_order in sync with seed data
+            if existing.display_order != skill_data["display_order"]:
+                existing.display_order = skill_data["display_order"]
+
+    # Clean up removed skills (only if they have no assignments)
+    for slug in REMOVED_SLUGS:
+        old = db.query(Skill).filter(Skill.slug == slug).first()
+        if old:
+            has_assignments = db.query(Assignment).filter(Assignment.skill_id == old.id).first()
+            if not has_assignments:
+                db.delete(old)
+
     db.commit()
 
 

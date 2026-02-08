@@ -21,7 +21,6 @@ def generate_problem(problem_type: str, difficulty: int, config: dict = None) ->
         "integer_magnitude": _integer_magnitude,
         "integer_number_line": _integer_number_line,
         "multiplication_facts": _multiplication_facts,
-        "multiplication_related_facts": _multiplication_related_facts,
         "multiplication_scaling": _multiplication_scaling,
     }
     gen = generators.get(problem_type)
@@ -285,6 +284,66 @@ def _pick_int_operands(difficulty: int) -> Tuple[int, int]:
     return a, b
 
 
+def _counter_data(a: int, b: int, operation: str) -> dict:
+    """Build yellow/red counter model data for integer add/sub.
+
+    Yellow counters = positive (+1 each)
+    Red counters    = negative (-1 each)
+    Zero pairs      = one yellow + one red that cancel out
+
+    For addition:
+        Show |a| yellows (if a>0) or |a| reds (if a<0),
+        then add |b| yellows (if b>0) or |b| reds (if b<0),
+        then cancel zero pairs.
+
+    For subtraction a - b:
+        Start with |a| yellows or reds.
+        To subtract positives: remove yellow counters (add zero pairs if needed).
+        To subtract negatives: remove red counters (add zero pairs if needed).
+    """
+    if operation == "+":
+        start_yellow = max(a, 0)
+        start_red = abs(min(a, 0))
+        add_yellow = max(b, 0)
+        add_red = abs(min(b, 0))
+    else:  # subtraction a - b
+        start_yellow = max(a, 0)
+        start_red = abs(min(a, 0))
+        # Subtracting b: we need to remove b-type counters.
+        # If b > 0, remove yellow. If not enough, add zero pairs first.
+        # If b < 0, remove red. If not enough, add zero pairs first.
+        if b > 0:
+            # Need to remove b yellow counters
+            zero_pairs_needed = max(0, b - start_yellow)
+            add_yellow = zero_pairs_needed  # zero pairs added
+            add_red = zero_pairs_needed
+            # "remove" is conceptual — the result handles it
+        else:
+            # b < 0: need to remove |b| red counters
+            abs_b = abs(b)
+            zero_pairs_needed = max(0, abs_b - start_red)
+            add_yellow = zero_pairs_needed
+            add_red = zero_pairs_needed
+
+    result = a + b if operation == "+" else a - b
+    result_yellow = max(result, 0)
+    result_red = abs(min(result, 0))
+
+    return {
+        "start_yellow": start_yellow,
+        "start_red": start_red,
+        "add_yellow": add_yellow,
+        "add_red": add_red,
+        "zero_pairs_needed": max(0, (add_yellow if operation == "-" else 0)),
+        "result_yellow": result_yellow,
+        "result_red": result_red,
+        "result": result,
+        "operation": operation,
+        "a": a,
+        "b": b,
+    }
+
+
 def _integer_addition(difficulty: int, config: dict) -> dict:
     a, b = _pick_int_operands(difficulty)
     correct = a + b
@@ -302,8 +361,9 @@ def _integer_addition(difficulty: int, config: dict) -> dict:
             "start": a,
             "move": b,
             "result": correct,
-            "line_min": min(a, correct, 0) - 5,
-            "line_max": max(a, correct, 0) + 5,
+            "line_min": min(a, correct, 0) - 3,
+            "line_max": max(a, correct, 0) + 3,
+            "counter_data": _counter_data(a, b, "+"),
         },
         "feedback_explanation": f"Start at {a}, move {b} {'right' if b > 0 else 'left'} to reach {correct}",
     }
@@ -326,8 +386,9 @@ def _integer_subtraction(difficulty: int, config: dict) -> dict:
             "start": a,
             "move": -b,
             "result": correct,
-            "line_min": min(a, correct, 0) - 5,
-            "line_max": max(a, correct, 0) + 5,
+            "line_min": min(a, correct, 0) - 3,
+            "line_max": max(a, correct, 0) + 3,
+            "counter_data": _counter_data(a, b, "-"),
         },
         "feedback_explanation": f"Start at {a}, subtract {b} to reach {correct}",
     }
@@ -405,33 +466,90 @@ def _integer_number_line(difficulty: int, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _mult_range(difficulty: int) -> Tuple[int, int]:
+    """Range used by related-facts and scaling generators.
+
+    Slightly wider than the strict facts progression because these
+    problem types need at least two distinct non-trivial factors.
+    """
     if difficulty <= 1:
         return (0, 5)
     elif difficulty <= 2:
-        return (0, 7)
+        return (0, 5)
     elif difficulty <= 3:
-        return (0, 10)
+        return (2, 8)
     elif difficulty <= 4:
-        return (0, 12)
+        return (2, 10)
     return (2, 12)
 
 
+# Multiplication facts use a structured progression where each difficulty
+# level introduces a new set of factors while sprinkling in review of
+# previously mastered facts.
+_MULT_FACTS_LEVELS = {
+    # difficulty: (focus_factors, review_factors)
+    1: ([0, 1, 2], []),                       # 0s, 1s, 2s
+    2: ([3], [0, 1, 2]),                       # 3s with 0-2 review
+    3: ([4, 5], [0, 1, 2, 3]),                 # 4s, 5s with 0-3 review
+    4: ([6, 7, 8], [0, 1, 2, 3, 4, 5]),       # 6-8s with 0-5 review
+    5: ([9, 10, 11, 12], [0, 1, 2, 3, 4, 5, 6, 7, 8]),  # 9-12s with review
+}
+
+
+def _pick_mult_factors(difficulty: int) -> Tuple[int, int]:
+    """Pick two factors for a multiplication facts problem.
+
+    ~70% of the time one factor comes from the focus set (new facts).
+    ~30% of the time both factors come from the review set (spiral review).
+    The second factor is always drawn from the full pool (focus + review)
+    so students see the new number combined with all previously learned facts.
+    """
+    level = max(1, min(5, difficulty))
+    focus, review = _MULT_FACTS_LEVELS[level]
+    full_pool = focus + review
+
+    if review and random.random() < 0.30:
+        # Pure review problem
+        a = random.choice(review)
+        b = random.choice(review)
+    else:
+        # Focus problem: one factor from focus set, other from full pool
+        a = random.choice(focus)
+        b = random.choice(full_pool) if full_pool else random.choice(focus)
+
+    # Randomly swap so the focus number isn't always first
+    if random.random() < 0.5:
+        a, b = b, a
+    return a, b
+
+
 def _multiplication_facts(difficulty: int, config: dict) -> dict:
-    lo, hi = _mult_range(difficulty)
-    a = random.randint(lo, hi)
-    b = random.randint(lo, hi)
+    a, b = _pick_mult_factors(difficulty)
     correct = a * b
+
+    # Build visual hint with optional doubling/halving highlight.
+    # When the number of rows (a) is even, show the array as two halves
+    # so students can see doubling/halving relationships visually.
+    hint = {
+        "type": "array_model",
+        "rows": a,
+        "cols": b,
+    }
+
+    if a >= 4 and a % 2 == 0:
+        # Show the array as "half + half" (doubling relationship)
+        # e.g. 6×4: first 3 rows in primary color, next 3 rows in accent
+        hint["highlight"] = {"type": "double", "baseRows": a // 2}
+    elif a >= 3 and a % 2 == 1 and a > 1:
+        # Odd rows ≥ 3: show as (a-1) rows + 1 extra row
+        # e.g. 5×3: four rows primary + one row accent (shows "plus one more group")
+        hint["highlight"] = {"type": "double", "baseRows": a - 1}
 
     return {
         "type": "multiplication_facts",
         "prompt": f"What is {a} × {b}?",
         "factors": [a, b],
         "correct_answer": str(correct),
-        "visual_hint": {
-            "type": "array_model",
-            "rows": a,
-            "cols": b,
-        },
+        "visual_hint": hint,
         "feedback_explanation": f"{a} × {b} = {correct}",
     }
 

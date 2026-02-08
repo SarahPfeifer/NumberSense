@@ -8,12 +8,14 @@ NumberSense is a teacher-driven math fluency and number sense platform for grade
 
 - **Three core domains**: Fractions, Combining Integers, Multiplication Fluency
 - **Teacher dashboard**: Assign skills, view class progress heat maps, drill into individual students
-- **Student practice**: Distraction-free sessions with warm-up → core → checkpoint flow
-- **Visual scaffolding**: Fraction bars, number lines, array models that fade as fluency grows
-- **Rules-based adaptation**: Transparent logic adjusts difficulty and visual support — no black-box AI
+- **Student practice**: Distraction-free 15-problem sessions (5 groups of 3) with group-based adaptation
+- **Visual scaffolding**: SVG fraction bars, interactive number lines, array models — scaffolding fades as fluency grows
+- **Rules-based adaptation**: Transparent logic adjusts difficulty and visual support after each group — no black-box AI
+- **Cross-assignment memory**: Difficulty and visual support carry over when a student revisits the same skill
 - **Clever SSO**: Login via Clever with automatic roster sync
 - **Fallback login**: Class code + student name for pilots/testing
 - **COPPA-friendly**: No ads, minimal PII, role-based access control
+- **CI pipeline**: GitHub Actions runs unit and integration tests on every push
 
 ## Architecture
 
@@ -24,6 +26,7 @@ NumberSense is a teacher-driven math fluency and number sense platform for grade
 | Database | PostgreSQL 16     |
 | Auth     | JWT + Clever SSO  |
 | Deploy   | Docker Compose    |
+| CI       | GitHub Actions    |
 
 ## Quick Start
 
@@ -37,7 +40,7 @@ docker compose up --build
 ```
 
 The app will be available at:
-- **Frontend**: http://localhost:3000
+- **Frontend**: http://localhost:3001
 - **API**: http://localhost:8000
 - **API docs**: http://localhost:8000/docs
 
@@ -66,10 +69,38 @@ npm install
 npm start
 ```
 
+## Running Tests
+
+Tests run automatically on every push via GitHub Actions. To run them locally:
+
+**Backend (unit + integration):**
+```bash
+cd backend
+pip install -r requirements.txt
+DATABASE_URL=sqlite:///./test.db SECRET_KEY=test python -m pytest tests/ -v
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npx react-scripts test --watchAll=false --verbose
+```
+
+### Test Coverage
+
+| Suite | Tests | What it covers |
+|-------|-------|----------------|
+| Backend unit | 72 | Adaptation engine rules, problem generation for all 11 skill types, difficulty scaling, negative integer guarantees |
+| Backend integration | 15 | Auth flow (login, register, access control), full 15-problem practice session lifecycle, adaptation at group boundaries, enrollment checks |
+| Frontend | 11 | FractionBar rendering, InteractiveFractionBar click events, VisualModel dispatcher, App smoke test |
+
 ## Project Structure
 
 ```
 NumberSense/
+├── .github/workflows/
+│   └── ci.yml              # GitHub Actions CI pipeline
 ├── backend/
 │   ├── app/
 │   │   ├── core/           # Config, database, security
@@ -87,6 +118,7 @@ NumberSense/
 │   │   │   ├── adaptation.py         # Rules-based difficulty adaptation
 │   │   │   └── seed_data.py          # Skill definitions + demo data
 │   │   └── main.py
+│   ├── tests/              # pytest unit + integration tests
 │   ├── alembic/            # Database migrations
 │   ├── requirements.txt
 │   └── Dockerfile
@@ -94,7 +126,7 @@ NumberSense/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── common/     # Navbar
-│   │   │   └── student/    # VisualModels (fraction bars, number lines, arrays)
+│   │   │   └── student/    # VisualModels (SVG fraction bars, number lines, arrays)
 │   │   ├── contexts/       # AuthContext
 │   │   ├── pages/          # All page components
 │   │   ├── services/       # API client
@@ -110,31 +142,36 @@ NumberSense/
 
 ### Fractions
 - Compare Fractions (visual + numeric)
-- Compare Fractions to Benchmarks (0, ½, 1)
+- Compare Fractions to Benchmarks (0, 1/2, 1)
 - Equivalent Fractions
 - Fractions on a Number Line
 
 ### Combining Integers
-- Adding Integers
+- Adding Integers (including minus-a-negative)
 - Subtracting Integers
 - Magnitude & Distance from Zero
 - Integers on a Number Line
 
 ### Multiplication Fluency
-- Multiplication Facts (0–12)
+- Multiplication Facts (0-12)
 - Related Facts & Fact Families
 - Multiplication as Scaling
 
 ## Adaptation Logic
 
-The system uses transparent, rules-based adaptation:
+Each 15-problem session is divided into **5 groups of 3**. After each group, the system evaluates that group's accuracy and speed, then adjusts two independent axes for the next group:
 
-| Student Performance | Action |
+- **Difficulty level** (1-5): Controls problem complexity (operand size, denominator range, etc.)
+- **Visual support level** (1-5): Controls scaffolding (5 = full static visuals, 3-2 = interactive/student-built visuals, 1 = no visuals)
+
+| Group Result | Action |
 |---|---|
-| **Fast + Accurate** (≥85%, <5s avg) | Reduce visual supports, then increase difficulty |
-| **Accurate + Slow** (≥85%, >5s avg) | Maintain difficulty, encourage efficiency |
-| **Inaccurate** (<60%) | Lower difficulty, increase visual scaffolding |
-| **Developing** (60-85%) | Small adjustments based on speed |
+| **Perfect** (3/3 correct) | Always advance: reduce visual support first, then increase difficulty |
+| **Strong** (>=2/3 correct + fast, <12s avg) | Advance scaffolding |
+| **Accurate but slow** (>=2/3 correct, >=12s avg) | Hold steady |
+| **Struggling** (0/3 or 1/3 correct) | Retreat: increase visual support, decrease difficulty |
+
+Starting levels carry over from the student's last completed session on the same skill, even across different assignments.
 
 ## API Endpoints
 

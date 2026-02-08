@@ -5,6 +5,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.skill import Skill
 from app.schemas.skill import SkillOut
+from app.services.seed_data import REMOVED_SLUGS
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 
@@ -16,7 +17,7 @@ def list_skills(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    q = db.query(Skill)
+    q = db.query(Skill).filter(~Skill.slug.in_(REMOVED_SLUGS))
     if domain:
         q = q.filter(Skill.domain == domain)
     if grade_level:
@@ -30,7 +31,7 @@ def list_domains(
     _user=Depends(get_current_user),
 ):
     """Return available domains with skill counts."""
-    skills = db.query(Skill).all()
+    skills = db.query(Skill).filter(~Skill.slug.in_(REMOVED_SLUGS)).all()
     domains = {}
     for s in skills:
         if s.domain not in domains:
