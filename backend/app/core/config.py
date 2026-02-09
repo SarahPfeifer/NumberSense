@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     CLEVER_CLIENT_SECRET: str = ""
     CLEVER_REDIRECT_URI: str = "http://localhost:8000/api/auth/clever/callback"
 
+    # Google Classroom integration
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:3001/teacher/google/callback"
+    NUMBERSENSE_BASE_URL: str = "http://localhost:3001"
+    # Encryption key for storing Google tokens at rest (Fernet, 32-byte base64)
+    GOOGLE_TOKEN_ENCRYPTION_KEY: str = ""
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 

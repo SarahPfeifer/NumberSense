@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginPage() {
@@ -12,6 +12,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login, classCodeLogin } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // If there's a redirect param (e.g., from Classroom deep link), go there after login
+  const redirectTo = searchParams.get('redirect');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,10 +24,10 @@ export default function LoginPage() {
     try {
       if (mode === 'teacher') {
         const user = await login(username, password);
-        navigate(user.role === 'teacher' ? '/teacher' : '/student');
+        navigate(redirectTo ? decodeURIComponent(redirectTo) : (user.role === 'teacher' ? '/teacher' : '/student'));
       } else {
-        const user = await classCodeLogin(classCode, studentId);
-        navigate('/student');
+        await classCodeLogin(classCode, studentId);
+        navigate(redirectTo ? decodeURIComponent(redirectTo) : '/student');
       }
     } catch (err) {
       setError(err.message);

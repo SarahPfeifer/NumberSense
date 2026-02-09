@@ -93,7 +93,6 @@ npm start
 | Skill | Description |
 |-------|-------------|
 | Multiplication Facts (0–12) | Build fluency with basic facts; structured progression through fact families (0s-2s → 3s → 4s-5s → 6s-7s → 8s-9s → 10s-12s) with distributive property visualization |
-| Multiplication as Scaling | Understand multiplication as making a number bigger, smaller, or keeping it the same |
 
 ## Visual Scaffolding Models
 
@@ -103,7 +102,6 @@ npm start
 | **Number Line** | Fraction/integer placement, integer operations | Start point shown → student places start point (no visual cue) → no visual |
 | **Counter Model** | Integer addition/subtraction (when \|a\| + \|b\| ≤ 20) | Yellow (positive) and red (negative) counters with zero pairs |
 | **Array Model** | Multiplication facts | Dot array with distributive property split shown in purple/gold → no visual |
-| **Scaling Bar** | Multiplication as scaling | Visual bar comparing original and scaled values → no visual |
 
 ## Adaptation Logic
 

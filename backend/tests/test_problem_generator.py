@@ -13,7 +13,6 @@ PROBLEM_TYPES = [
     "integer_subtraction",
     "integer_number_line",
     "multiplication_facts",
-    "multiplication_scaling",
 ]
 
 

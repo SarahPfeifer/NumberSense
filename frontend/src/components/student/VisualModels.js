@@ -217,11 +217,19 @@ function generateTicks(min, max, options = {}) {
     const ticks = [];
     const intMin = Math.ceil(min);
     const intMax = Math.floor(max);
-    // Determine label frequency: label every tick if ≤25, else label key values
     const count = intMax - intMin + 1;
-    const labelEvery = count <= 25 ? 1 : count <= 50 ? 2 : 5;
+
+    // Pick a label interval that keeps the line readable:
+    //   ≤ 25 ticks → label every integer
+    //   ≤ 50       → every 2
+    //   ≤ 100      → every 5
+    //   > 100      → every 10
+    const labelEvery = count <= 25 ? 1 : count <= 50 ? 2 : count <= 100 ? 5 : 10;
+
     for (let v = intMin; v <= intMax; v++) {
-      const showLabel = v === intMin || v === intMax || v === 0 || v % labelEvery === 0;
+      const showLabel = v === intMin || v === intMax || v === 0
+        || v % labelEvery === 0
+        || (labelEvery > 1 && v % 5 === 0);   // always label multiples of 5
       ticks.push({ value: v, label: showLabel ? String(v) : '' });
     }
     return ticks;
@@ -246,7 +254,7 @@ function generateTicks(min, max, options = {}) {
 
 // ─── Static Number Line ─────────────────────────────────
 
-export function NumberLine({ min, max, points, marker, fractionDenom, startVal, moveVal, everyInteger }) {
+export function NumberLine({ min, max, points, marker, fractionDenom, startVal, moveVal, everyInteger, hideLabels }) {
   const range = max - min;
   const getPos = (val) => Math.max(0, Math.min(100, ((val - min) / range) * 100));
   const ticks = generateTicks(min, max, { fractionDenom, everyInteger });
@@ -268,8 +276,11 @@ export function NumberLine({ min, max, points, marker, fractionDenom, startVal, 
         {/* Ticks + labels */}
         {ticks.map((t, i) => {
           const x = 20 + (getPos(t.value) / 100) * 460;
-          // Only label every other tick if there are many
-          const showLabel = ticks.length <= 12 || i % 2 === 0 || t.value === min || t.value === max || t.value === 0;
+          // When hideLabels is set, only show endpoint labels (0 and 1)
+          const isEndpoint = t.value === min || t.value === max;
+          const showLabel = hideLabels
+            ? isEndpoint
+            : (ticks.length <= 12 || i % 2 === 0 || isEndpoint || t.value === 0);
           return (
             <g key={i}>
               <line x1={x} y1="44" x2={x} y2="56" stroke="#9CA3AF" strokeWidth="1.5" />
@@ -625,31 +636,6 @@ export function ArrayModel({ rows, cols, maxDisplay = 12, showDimensions = false
   );
 }
 
-// ─── Scaling Bar ────────────────────────────────────────
-
-export function ScalingBar({ base, multiplier, showAnswer = false }) {
-  const maxWidth = 280;
-  const baseWidth = Math.min(maxWidth, base * 20);
-  const resultWidth = Math.min(maxWidth, base * multiplier * 20);
-
-  return (
-    <div className="visual-model">
-      <div style={{ marginBottom: '.5rem' }}>
-        <div className="text-sm text-muted">Original: {base}</div>
-        <div style={{ height: 24, width: baseWidth || 4, background: 'var(--ns-indigo-500)', borderRadius: 4, minWidth: 4 }} />
-      </div>
-      <div>
-        <div className="text-sm text-muted">
-          {showAnswer
-            ? `Result: ${base} × ${multiplier} = ${base * multiplier}`
-            : `${base} × ${multiplier}`}
-        </div>
-        <div style={{ height: 24, width: resultWidth || 4, background: 'var(--ns-green-500)', borderRadius: 4, minWidth: 4 }} />
-      </div>
-    </div>
-  );
-}
-
 // ─── Yellow / Red Counter Models ────────────────────────
 //
 // Yellow = positive (+1), Red = negative (−1).
@@ -965,6 +951,7 @@ export default function VisualModel({ hint, problemData, interactive, onInteract
             max={1}
             marker={hint.marked_position !== undefined ? hint.marked_position : hint.fraction_value}
             fractionDenom={hint.denominator}
+            hideLabels={hint.show_labels === false}
           />
         );
       }
@@ -982,17 +969,6 @@ export default function VisualModel({ hint, problemData, interactive, onInteract
 
     case 'array_model':
       return <ArrayModel rows={hint.rows} cols={hint.cols} highlight={hint.highlight} />;
-
-    case 'scaling_bar':
-      return <ScalingBar base={hint.base_value} multiplier={hint.multiplier} />;
-
-    case 'double_array':
-      return (
-        <div style={{ display: 'flex', gap: '2rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <ArrayModel rows={hint.left.rows} cols={hint.left.cols} />
-          <ArrayModel rows={hint.right.rows} cols={hint.right.cols} />
-        </div>
-      );
 
     default:
       return null;

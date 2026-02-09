@@ -20,7 +20,6 @@ def generate_problem(problem_type: str, difficulty: int, config: dict = None) ->
         "integer_subtraction": _integer_subtraction,
         "integer_number_line": _integer_number_line,
         "multiplication_facts": _multiplication_facts,
-        "multiplication_scaling": _multiplication_scaling,
     }
     gen = generators.get(problem_type)
     if not gen:
@@ -201,17 +200,33 @@ def _equivalent_fractions(difficulty: int, config: dict) -> dict:
 
 
 def _fraction_number_line(difficulty: int, config: dict) -> dict:
+    """Place / identify a fraction on a number line between 0 and 1.
+
+    Scaffolding is driven by visual_support_level (passed via config):
+      Level 5:   Tick marks WITH labels  + multiple choice
+      Level 4:   Tick marks WITH labels  + free response
+      Level 3:   Tick marks WITHOUT labels + multiple choice
+      Level 2-1: Tick marks WITHOUT labels + free response
+
+    Difficulty controls denominator size (via _pick_fraction).
+    Equivalent fraction answers are accepted (handled in practice.py).
+    """
+    vis_level = config.get("visual_support_level", 5)
     n, d = _pick_fraction(difficulty)
     frac_value = float(Fraction(n, d))
 
-    # Generate some choices
+    # Generate multiple-choice options (included or stripped by practice.py)
     choices = [f"{n}/{d}"]
     while len(choices) < 4:
         cn, cd = _pick_fraction(difficulty)
         c_str = f"{cn}/{cd}"
-        if c_str not in choices and abs(float(Fraction(cn, cd)) - frac_value) > 0.05:
+        cv = float(Fraction(cn, cd))
+        if c_str not in choices and abs(cv - frac_value) > 0.05:
             choices.append(c_str)
     random.shuffle(choices)
+
+    # Labels shown at higher support levels, hidden at lower ones
+    show_labels = vis_level >= 4
 
     return {
         "type": "fraction_number_line",
@@ -224,6 +239,7 @@ def _fraction_number_line(difficulty: int, config: dict) -> dict:
             "type": "number_line",
             "marked_position": frac_value,
             "denominator": d,
+            "show_labels": show_labels,
         },
         "feedback_explanation": f"The point is at {n}/{d} = {frac_value:.3f}",
     }
@@ -578,87 +594,3 @@ def _multiplication_facts(difficulty: int, config: dict) -> dict:
     }
 
 
-def _multiplication_scaling(difficulty: int, config: dict) -> dict:
-    """Multiplication as scaling — number sense focus."""
-    lo, hi = _mult_range(difficulty)
-    base = random.randint(max(lo, 2), hi)
-
-    # Scaling questions
-    scale_type = random.choice(["bigger_smaller", "estimate", "compare_products"])
-    if scale_type == "bigger_smaller":
-        multiplier = random.choice([0, 1, random.randint(2, 5)])
-        if multiplier == 0:
-            correct = "zero"
-            explanation = f"Any number × 0 = 0"
-        elif multiplier == 1:
-            correct = "same"
-            explanation = f"Any number × 1 = the same number"
-        else:
-            correct = "bigger"
-            explanation = f"{base} × {multiplier} = {base * multiplier}, which is bigger than {base}"
-
-        return {
-            "type": "multiplication_scaling",
-            "prompt": f"Is {base} × {multiplier} bigger than, smaller than, or equal to {base}?",
-            "base": base,
-            "multiplier": multiplier,
-            "choices": ["bigger", "same", "zero", "smaller"],
-            "correct_answer": correct,
-            "visual_hint": {
-                "type": "scaling_bar",
-                "base_value": base,
-                "multiplier": multiplier,
-            },
-            "feedback_explanation": explanation,
-        }
-    elif scale_type == "estimate":
-        a = random.randint(max(lo, 2), hi)
-        b = random.randint(max(lo, 2), hi)
-        product = a * b
-        # Generate close options
-        options = sorted(set([
-            product,
-            product + random.randint(1, 10),
-            product - random.randint(1, min(10, product - 1)) if product > 1 else product + 5,
-            product + random.randint(10, 20),
-        ]))
-        random.shuffle(options)
-        return {
-            "type": "multiplication_scaling",
-            "prompt": f"Which is closest to {a} × {b}?",
-            "factors": [a, b],
-            "choices": [str(o) for o in options],
-            "correct_answer": str(product),
-            "visual_hint": {
-                "type": "array_model",
-                "rows": a,
-                "cols": b,
-            },
-            "feedback_explanation": f"{a} × {b} = {product}",
-        }
-    else:  # compare_products
-        a1 = random.randint(max(lo, 2), hi)
-        b1 = random.randint(max(lo, 2), hi)
-        a2 = random.randint(max(lo, 2), hi)
-        b2 = random.randint(max(lo, 2), hi)
-        p1, p2 = a1 * b1, a2 * b2
-        if p1 > p2:
-            correct = ">"
-        elif p1 < p2:
-            correct = "<"
-        else:
-            correct = "="
-        return {
-            "type": "multiplication_scaling",
-            "prompt": f"Without calculating exactly: {a1} × {b1} ___ {a2} × {b2}",
-            "left": {"a": a1, "b": b1},
-            "right": {"a": a2, "b": b2},
-            "choices": ["<", "=", ">"],
-            "correct_answer": correct,
-            "visual_hint": {
-                "type": "double_array",
-                "left": {"rows": a1, "cols": b1},
-                "right": {"rows": a2, "cols": b2},
-            },
-            "feedback_explanation": f"{a1}×{b1}={p1}, {a2}×{b2}={p2}",
-        }

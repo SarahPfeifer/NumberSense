@@ -23,6 +23,11 @@ services:
       DATABASE_URL: postgresql://numbersense:numbersense@db:5432/numbersense
       SECRET_KEY: dev-secret-key-change-in-production
       CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3001/teacher/google/callback}
+      NUMBERSENSE_BASE_URL: ${NUMBERSENSE_BASE_URL:-http://localhost:3001}
+      GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
     depends_on:
       db:
         condition: service_healthy

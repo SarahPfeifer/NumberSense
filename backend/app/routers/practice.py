@@ -4,6 +4,7 @@ Handles starting sessions, generating problems, submitting answers,
 and applying adaptation logic.
 """
 import uuid
+from fractions import Fraction
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -25,6 +26,32 @@ from app.services.adaptation import (
 )
 
 router = APIRouter(prefix="/api/practice", tags=["practice"])
+
+
+def _parse_fraction(s: str):
+    """Try to parse a string like '3/4' into a Fraction.  Returns None on failure."""
+    try:
+        s = s.strip()
+        if "/" in s:
+            parts = s.split("/")
+            return Fraction(int(parts[0]), int(parts[1]))
+        # Also accept plain integers
+        return Fraction(int(s))
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _fraction_equal(student: str, correct: str) -> bool:
+    """Check if two answers are equal, accepting equivalent fractions.
+
+    Falls back to exact string match if either value can't be parsed.
+    """
+    fs = _parse_fraction(student)
+    fc = _parse_fraction(correct)
+    if fs is not None and fc is not None:
+        return fs == fc
+    # Fallback: exact string match
+    return student.strip() == correct.strip()
 
 
 @router.post("/start", response_model=SessionOut)
@@ -151,12 +178,18 @@ def get_next_problem(
     # ── Group-based difficulty & visual support ──
     difficulty = session.difficulty_level
     vis_level = session.visual_support_level
-    show_visual = vis_level >= 2  # level 1 = no visual
 
-    # Build generation config — for multiplication_facts, include which
-    # facts the student has already seen this session so the picker
-    # prioritises unseen facts for better coverage.
+    # For number-line identification skills the visual IS the question —
+    # it must always be shown.  Scaffolding = removing multiple choice.
+    _NL_IDENT_TYPES = {"integer_number_line", "fraction_number_line"}
+    always_visual = skill.problem_type in _NL_IDENT_TYPES
+    show_visual = True if always_visual else (vis_level >= 2)  # level 1 = no visual
+
+    # Build generation config — pass visual support level so generators
+    # can embed scaffold flags (e.g. show_labels for fraction number lines).
     gen_config = dict(skill.config or {})
+    gen_config["visual_support_level"] = vis_level
+
     if skill.problem_type == "multiplication_facts":
         prev_attempts = (
             db.query(StudentAttempt)
@@ -191,7 +224,22 @@ def get_next_problem(
 
     # Strip correct answer and feedback explanation from response
     problem_display = {k: v for k, v in problem.items() if k not in ("correct_answer", "feedback_explanation")}
-    if not show_visual:
+
+    # For number-line identification skills the visual IS the question —
+    # always keep it.  Scaffold by removing multiple-choice instead.
+    if always_visual:
+        if skill.problem_type == "fraction_number_line":
+            # Fraction NL scaffolding:
+            #   5: labeled ticks + choices    4: labeled ticks + free response
+            #   3: unlabeled ticks + choices  2-1: unlabeled ticks + free response
+            if vis_level in (4, 2, 1):
+                problem_display.pop("choices", None)
+        else:
+            # Integer NL scaffolding:
+            #   5-3: number line + choices    2-1: free response
+            if vis_level <= 2:
+                problem_display.pop("choices", None)
+    elif not show_visual:
         problem_display.pop("visual_hint", None)
 
     group = get_group_number(sequence, group_size, num_groups)
@@ -241,8 +289,17 @@ def submit_answer(
     if not attempt:
         raise HTTPException(status_code=404, detail="Problem not found")
 
-    # Record answer
-    is_correct = req.student_answer.strip() == attempt.correct_answer.strip()
+    # Record answer — for fraction-based skills, accept equivalent fractions
+    student_ans = req.student_answer.strip()
+    correct_ans = attempt.correct_answer.strip()
+    ptype = (attempt.problem_data or {}).get("type", "")
+
+    if ptype in ("fraction_number_line", "fraction_comparison",
+                 "fraction_comparison_benchmark", "equivalent_fractions"):
+        is_correct = _fraction_equal(student_ans, correct_ans)
+    else:
+        is_correct = student_ans == correct_ans
+
     attempt.student_answer = req.student_answer
     attempt.is_correct = is_correct
     attempt.response_time_ms = req.response_time_ms

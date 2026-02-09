@@ -69,6 +69,15 @@ class ApiService {
   // Analytics
   classroomOverview(classroomId) { return this.get(`/analytics/classroom/${classroomId}/overview`); }
   studentProgress(studentId, classroomId) { return this.get(`/analytics/student/${studentId}/progress?classroom_id=${classroomId}`); }
+
+  // Google Classroom
+  googleStatus() { return this.get('/google/status'); }
+  googleOAuthUrl() { return this.get('/google/oauth/url'); }
+  googleOAuthCallback(code) { return this.post('/google/oauth/callback', { code }); }
+  googleDisconnect() { return this.post('/google/disconnect', {}); }
+  googleListCourses() { return this.get('/google/classroom/courses'); }
+  googlePostAssignment(data) { return this.post('/google/classroom/post-assignment', data); }
+  googleAssignmentLinks(assignmentId) { return this.get(`/google/classroom/assignment-links/${assignmentId}`); }
 }
 
 const api = new ApiService();

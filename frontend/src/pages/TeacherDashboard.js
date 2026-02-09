@@ -8,10 +8,13 @@ export default function TeacherDashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [googleStatus, setGoogleStatus] = useState(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     api.listClassrooms().then(setClassrooms).finally(() => setLoading(false));
+    api.googleStatus().then(setGoogleStatus).catch(() => {});
   }, []);
 
   const handleCreate = async (e) => {
@@ -21,6 +24,30 @@ export default function TeacherDashboard() {
     setClassrooms([c, ...classrooms]);
     setNewName('');
     setShowCreate(false);
+  };
+
+  const handleConnectGoogle = async () => {
+    setGoogleLoading(true);
+    try {
+      const { redirect_url } = await api.googleOAuthUrl();
+      window.location.href = redirect_url;
+    } catch (err) {
+      alert('Could not start Google Classroom connection. Please try again.');
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    if (!window.confirm('Disconnect Google Classroom? Existing posted assignments will remain in Classroom.')) return;
+    setGoogleLoading(true);
+    try {
+      await api.googleDisconnect();
+      setGoogleStatus({ connected: false });
+    } catch (err) {
+      alert('Failed to disconnect. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   return (
@@ -46,6 +73,36 @@ export default function TeacherDashboard() {
             <button className="btn btn-primary" type="submit">Create</button>
             <button className="btn btn-secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</button>
           </form>
+        )}
+
+        {/* Google Classroom Connection */}
+        {googleStatus && (
+          <div className="card" style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z" fill="#4285F4"/></svg>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '.9375rem' }}>Google Classroom</div>
+                {googleStatus.connected ? (
+                  <div className="text-sm" style={{ color: 'var(--ns-green-600)' }}>
+                    Connected as {googleStatus.google_email}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted">Not connected — link your account to post assignments to Classroom</div>
+                )}
+              </div>
+            </div>
+            {googleStatus.connected ? (
+              <button className="btn btn-secondary" onClick={handleDisconnectGoogle} disabled={googleLoading}
+                style={{ fontSize: '.8125rem', whiteSpace: 'nowrap' }}>
+                Disconnect
+              </button>
+            ) : (
+              <button className="btn btn-primary" onClick={handleConnectGoogle} disabled={googleLoading}
+                style={{ whiteSpace: 'nowrap' }}>
+                {googleLoading ? 'Connecting...' : 'Connect Google Classroom'}
+              </button>
+            )}
+          </div>
         )}
 
         {loading ? (

@@ -103,21 +103,10 @@ SKILLS = [
         "problem_type": "multiplication_facts",
         "display_order": 1,
     },
-    {
-        "domain": "multiplication",
-        "name": "Multiplication as Scaling",
-        "slug": "multiplication-scaling",
-        "description": "Understand multiplication as making a number bigger, smaller, or keeping it the same.",
-        "grade_level": 4,
-        "difficulty_min": 1,
-        "difficulty_max": 5,
-        "problem_type": "multiplication_scaling",
-        "display_order": 2,
-    },
 ]
 
 
-REMOVED_SLUGS = ["multiplication-related-facts", "integer-magnitude"]
+REMOVED_SLUGS = ["multiplication-related-facts", "integer-magnitude", "multiplication-scaling"]
 
 
 def seed_skills(db: Session):

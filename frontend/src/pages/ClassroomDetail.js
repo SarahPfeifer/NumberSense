@@ -36,18 +36,41 @@ export default function ClassroomDetail() {
   const [enrollForm, setEnrollForm] = useState({ first_name: '', last_name: '' });
   const [loading, setLoading] = useState(true);
 
+  // Google Classroom state
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [gcPostModal, setGcPostModal] = useState(null);   // assignment being posted
+  const [gcCourses, setGcCourses] = useState([]);
+  const [gcSelectedCourse, setGcSelectedCourse] = useState('');
+  const [gcDueDate, setGcDueDate] = useState('');
+  const [gcPosting, setGcPosting] = useState(false);
+  const [gcLinks, setGcLinks] = useState({});              // assignment_id → [links]
+
   const loadData = useCallback(async () => {
     try {
-      const [c, s, a, o] = await Promise.all([
+      const [c, s, a, o, gs] = await Promise.all([
         api.getClassroom(id),
         api.listStudents(id),
         api.listAssignments(id),
         api.classroomOverview(id).catch(() => null),
+        api.googleStatus().catch(() => ({ connected: false })),
       ]);
       setClassroom(c);
       setStudents(s);
       setAssignments(a);
       setOverview(o);
+      setGoogleConnected(gs.connected);
+
+      // Load Google Classroom links for each assignment
+      if (gs.connected && a.length > 0) {
+        const linkResults = {};
+        await Promise.all(a.map(async (asgn) => {
+          try {
+            const res = await api.googleAssignmentLinks(asgn.id);
+            if (res.links && res.links.length > 0) linkResults[asgn.id] = res.links;
+          } catch {}
+        }));
+        setGcLinks(linkResults);
+      }
     } finally {
       setLoading(false);
     }
@@ -67,6 +90,37 @@ export default function ClassroomDetail() {
     if (!window.confirm('Remove this assignment?')) return;
     await api.deleteAssignment(aid);
     loadData();
+  };
+
+  const openPostToClassroom = async (assignment) => {
+    setGcPostModal(assignment);
+    setGcSelectedCourse('');
+    setGcDueDate('');
+    setGcPosting(false);
+    try {
+      const res = await api.googleListCourses();
+      setGcCourses(res.courses || []);
+    } catch {
+      setGcCourses([]);
+    }
+  };
+
+  const handlePostToClassroom = async () => {
+    if (!gcSelectedCourse || !gcPostModal) return;
+    setGcPosting(true);
+    try {
+      await api.googlePostAssignment({
+        assignment_id: gcPostModal.id,
+        course_id: gcSelectedCourse,
+        due_date: gcDueDate || null,
+      });
+      setGcPostModal(null);
+      loadData();
+    } catch (err) {
+      alert(err.message || 'Failed to post to Google Classroom.');
+    } finally {
+      setGcPosting(false);
+    }
   };
 
   if (loading) return <><Navbar /><p className="text-center text-muted mt-3">Loading...</p></>;
@@ -229,31 +283,100 @@ export default function ClassroomDetail() {
                 </div>
               ) : (
                 <div className="grid-2">
-                  {assignments.map(a => (
-                    <div key={a.id} className="card">
-                      <div className="flex-between">
-                        <div>
-                          <h4 style={{ fontWeight: 600, fontSize: '.9375rem' }}>{a.skill_name}</h4>
-                          <span className="badge badge-gray mt-1">{a.skill_domain}</span>
+                  {assignments.map(a => {
+                    const links = gcLinks[a.id] || [];
+                    return (
+                      <div key={a.id} className="card">
+                        <div className="flex-between">
+                          <div>
+                            <h4 style={{ fontWeight: 600, fontSize: '.9375rem' }}>{a.skill_name}</h4>
+                            <span className="badge badge-gray mt-1">{a.skill_domain}</span>
+                          </div>
+                          <button className="btn btn-secondary" style={{ padding: '.25rem .5rem', fontSize: '.75rem', color: 'var(--ns-red-500)' }}
+                            onClick={() => handleDeleteAssignment(a.id)}>
+                            Remove
+                          </button>
                         </div>
-                        <button className="btn btn-secondary" style={{ padding: '.25rem .5rem', fontSize: '.75rem', color: 'var(--ns-red-500)' }}
-                          onClick={() => handleDeleteAssignment(a.id)}>
-                          Remove
-                        </button>
+                        <div className="flex gap-1 mt-2 text-sm text-muted" style={{ flexWrap: 'wrap' }}>
+                          <span>Completed: {a.completion_count}/{a.total_students}</span>
+                          {a.visual_supports && <span className="badge badge-indigo">Visuals ON</span>}
+                          {a.time_limit_seconds && <span className="badge badge-yellow">{a.time_limit_seconds/60}m limit</span>}
+                        </div>
+
+                        {/* Google Classroom status */}
+                        {links.length > 0 ? (
+                          <div style={{ marginTop: '.75rem', padding: '.5rem .75rem', background: '#E8F5E9', borderRadius: 'var(--ns-radius)', fontSize: '.8125rem', color: '#2E7D32' }}>
+                            Posted to: {links.map(l => l.course_name || 'Classroom').join(', ')}
+                          </div>
+                        ) : googleConnected ? (
+                          <button className="btn btn-secondary mt-2"
+                            style={{ fontSize: '.8125rem', width: '100%' }}
+                            onClick={() => openPostToClassroom(a)}>
+                            Post to Google Classroom
+                          </button>
+                        ) : null}
                       </div>
-                      <div className="flex gap-1 mt-2 text-sm text-muted">
-                        <span>Completed: {a.completion_count}/{a.total_students}</span>
-                        {a.visual_supports && <span className="badge badge-indigo">Visuals ON</span>}
-                        {a.time_limit_seconds && <span className="badge badge-yellow">{a.time_limit_seconds/60}m limit</span>}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* Post to Google Classroom Modal */}
+      {gcPostModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }} onClick={() => setGcPostModal(null)}>
+          <div className="card" style={{ maxWidth: 440, width: '100%', margin: '1rem', padding: '2rem' }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontWeight: 700, fontSize: '1.125rem', marginBottom: '.25rem' }}>
+              Post to Google Classroom
+            </h3>
+            <p className="text-sm text-muted" style={{ marginBottom: '1.25rem' }}>
+              Post "{gcPostModal.skill_name}" so students can find it in Classroom.
+            </p>
+
+            <div className="form-group">
+              <label>Select a Classroom course</label>
+              {gcCourses.length === 0 ? (
+                <p className="text-sm text-muted">Loading courses...</p>
+              ) : (
+                <select className="form-input" value={gcSelectedCourse}
+                  onChange={e => setGcSelectedCourse(e.target.value)}>
+                  <option value="">Choose a course...</option>
+                  {gcCourses.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}{c.section ? ` — ${c.section}` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label>Due date (optional)</label>
+              <input className="form-input" type="date" value={gcDueDate}
+                onChange={e => setGcDueDate(e.target.value)} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '.75rem', marginTop: '1rem' }}>
+              <button className="btn btn-primary" style={{ flex: 1 }}
+                onClick={handlePostToClassroom}
+                disabled={!gcSelectedCourse || gcPosting}>
+                {gcPosting ? 'Posting...' : 'Post Assignment'}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setGcPostModal(null)}
+                disabled={gcPosting}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
