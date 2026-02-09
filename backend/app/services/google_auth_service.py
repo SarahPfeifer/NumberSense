@@ -22,10 +22,11 @@ from app.models.google_classroom import GoogleAccount
 
 logger = logging.getLogger("numbersense.google_auth")
 
-# Minimal scopes required for Level 2 integration
+# Scopes required for Level 2 integration + roster import
 SCOPES = [
     "https://www.googleapis.com/auth/classroom.courses.readonly",
     "https://www.googleapis.com/auth/classroom.coursework.students",
+    "https://www.googleapis.com/auth/classroom.rosters.readonly",
     "https://www.googleapis.com/auth/userinfo.email",
     "openid",
 ]

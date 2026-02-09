@@ -41,13 +41,18 @@ export function AuthProvider({ children }) {
     return data.user;
   }, []);
 
+  const claimSession = useCallback((token, studentInfo) => {
+    api.setToken(token);
+    setUser(studentInfo);
+  }, []);
+
   const logout = useCallback(() => {
     api.setToken(null);
     setUser(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, classCodeLogin, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, classCodeLogin, register, claimSession, logout }}>
       {children}
     </AuthContext.Provider>
   );

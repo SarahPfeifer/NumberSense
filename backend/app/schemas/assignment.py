@@ -20,6 +20,7 @@ class AssignmentOut(BaseModel):
     skill_name: Optional[str] = None
     skill_domain: Optional[str] = None
     title: Optional[str] = None
+    share_token: Optional[str] = None
     time_limit_seconds: Optional[int] = None
     visual_supports: bool
     is_active: bool

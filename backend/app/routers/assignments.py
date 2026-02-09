@@ -62,6 +62,7 @@ def create_assignment(
         skill_name=skill.name,
         skill_domain=skill.domain,
         title=assignment.title,
+        share_token=assignment.share_token,
         time_limit_seconds=assignment.time_limit_seconds,
         visual_supports=assignment.visual_supports,
         is_active=assignment.is_active,
@@ -108,7 +109,8 @@ def list_assignments(
         result.append(AssignmentOut(
             id=a.id, classroom_id=a.classroom_id, skill_id=a.skill_id,
             skill_name=skill.name if skill else "", skill_domain=skill.domain if skill else "",
-            title=a.title, time_limit_seconds=a.time_limit_seconds,
+            title=a.title, share_token=a.share_token,
+            time_limit_seconds=a.time_limit_seconds,
             visual_supports=a.visual_supports, is_active=a.is_active,
             created_at=a.created_at, due_date=a.due_date,
             completion_count=completed, total_students=total_students,

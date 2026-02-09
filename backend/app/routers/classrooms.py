@@ -91,6 +91,23 @@ def get_classroom(
     )
 
 
+@router.delete("/{classroom_id}")
+def delete_classroom(
+    classroom_id: str,
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    """Soft-delete a classroom (sets is_active = False)."""
+    c = db.query(Classroom).filter(
+        Classroom.id == classroom_id, Classroom.teacher_id == teacher.id
+    ).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Classroom not found")
+    c.is_active = False
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/{classroom_id}/students", response_model=EnrollmentOut)
 def enroll_student(
     classroom_id: str,

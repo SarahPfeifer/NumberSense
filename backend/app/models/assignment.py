@@ -1,4 +1,5 @@
 import uuid
+import secrets
 from sqlalchemy import Column, String, ForeignKey, DateTime, Boolean, Integer, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -9,6 +10,10 @@ def gen_uuid():
     return str(uuid.uuid4())
 
 
+def gen_share_token():
+    return secrets.token_urlsafe(16)  # 22-char URL-safe string
+
+
 class Assignment(Base):
     __tablename__ = "assignments"
 
@@ -17,6 +22,7 @@ class Assignment(Base):
     skill_id = Column(String(36), ForeignKey("skills.id"), nullable=False)
     assigned_by = Column(String(36), ForeignKey("users.id"), nullable=False)
     title = Column(String(300), nullable=True)
+    share_token = Column(String(64), unique=True, nullable=True, default=gen_share_token)
     time_limit_seconds = Column(Integer, nullable=True)       # optional time limit
     visual_supports = Column(Boolean, default=True)           # teacher can toggle
     target_student_ids = Column(JSON, nullable=True)          # null = entire class

@@ -47,7 +47,7 @@ def oauth_callback(
     db: Session = Depends(get_db),
     teacher: User = Depends(require_teacher),
 ):
-    """Exchange the authorization code for tokens and store them."""
+    """Exchange the authorization code for tokens, store them, and import courses."""
     try:
         token_data = google_auth_service.exchange_code(req.code)
     except Exception as exc:
@@ -61,9 +61,17 @@ def oauth_callback(
     logger.info("Teacher %s connected Google Classroom (email=%s)",
                 teacher.id, token_data.get("google_email"))
 
+    # Auto-import courses as NumberSense classrooms
+    imported = []
+    try:
+        imported = google_classroom_service.import_courses(db, teacher.id)
+    except Exception as exc:
+        logger.warning("Auto-import courses failed for teacher %s: %s", teacher.id, exc)
+
     return {
         "connected": True,
         "google_email": token_data.get("google_email", ""),
+        "imported_courses": imported,
     }
 
 
@@ -131,6 +139,29 @@ def post_assignment(
             detail="Failed to post to Google Classroom. Please try again.",
         )
     return result
+
+
+@router.post("/classroom/import-courses")
+def import_courses(
+    db: Session = Depends(get_db),
+    teacher: User = Depends(require_teacher),
+):
+    """Import Google Classroom courses as NumberSense classes.
+
+    Skips courses that have already been imported. Can be called
+    multiple times safely to pick up newly created courses.
+    """
+    try:
+        results = google_classroom_service.import_courses(db, teacher.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    except Exception as exc:
+        logger.error("Failed to import courses for teacher %s: %s", teacher.id, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Could not import courses from Google Classroom. Please try again.",
+        )
+    return {"courses": results}
 
 
 @router.get("/classroom/assignment-links/{assignment_id}")

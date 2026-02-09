@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal
-from app.routers import auth, classrooms, skills, assignments, practice, analytics, google_classroom
+from app.routers import auth, classrooms, skills, assignments, practice, analytics, google_classroom, shared
 from app.models import google_classroom as _gc_models  # noqa: ensure tables are created
 
 # Create all tables
@@ -31,6 +31,7 @@ app.include_router(assignments.router)
 app.include_router(practice.router)
 app.include_router(analytics.router)
 app.include_router(google_classroom.router)
+app.include_router(shared.router)
 
 
 @app.on_event("startup")

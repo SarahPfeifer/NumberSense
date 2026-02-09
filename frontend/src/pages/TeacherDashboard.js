@@ -50,6 +50,35 @@ export default function TeacherDashboard() {
     }
   };
 
+  const handleDeleteClass = async (e, classroomId, classroomName) => {
+    e.stopPropagation(); // don't navigate into the class
+    if (!window.confirm(`Remove "${classroomName}"? This will hide the class from your dashboard. Student data is preserved.`)) return;
+    try {
+      await api.deleteClassroom(classroomId);
+      setClassrooms(prev => prev.filter(c => c.id !== classroomId));
+    } catch (err) {
+      alert(err.message || 'Failed to remove class.');
+    }
+  };
+
+  const handleSyncClasses = async () => {
+    setGoogleLoading(true);
+    try {
+      const res = await api.googleImportCourses();
+      const imported = (res.courses || []).filter(c => c.status === 'imported');
+      if (imported.length > 0) {
+        alert(`Imported ${imported.length} new class${imported.length !== 1 ? 'es' : ''} from Google Classroom.`);
+        api.listClassrooms().then(setClassrooms);
+      } else {
+        alert('All Google Classroom courses are already in NumberSense.');
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to sync classes.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   return (
     <>
       <Navbar />
@@ -92,10 +121,16 @@ export default function TeacherDashboard() {
               </div>
             </div>
             {googleStatus.connected ? (
-              <button className="btn btn-secondary" onClick={handleDisconnectGoogle} disabled={googleLoading}
-                style={{ fontSize: '.8125rem', whiteSpace: 'nowrap' }}>
-                Disconnect
-              </button>
+              <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={handleSyncClasses} disabled={googleLoading}
+                  style={{ fontSize: '.8125rem', whiteSpace: 'nowrap' }}>
+                  {googleLoading ? 'Syncing...' : 'Sync Classes'}
+                </button>
+                <button className="btn btn-secondary" onClick={handleDisconnectGoogle} disabled={googleLoading}
+                  style={{ fontSize: '.8125rem', whiteSpace: 'nowrap' }}>
+                  Disconnect
+                </button>
+              </div>
             ) : (
               <button className="btn btn-primary" onClick={handleConnectGoogle} disabled={googleLoading}
                 style={{ whiteSpace: 'nowrap' }}>
@@ -118,14 +153,29 @@ export default function TeacherDashboard() {
               <div
                 key={c.id}
                 className="card"
-                style={{ cursor: 'pointer', transition: 'box-shadow .15s' }}
+                style={{ cursor: 'pointer', transition: 'box-shadow .15s', position: 'relative' }}
                 onClick={() => navigate(`/teacher/classroom/${c.id}`)}
                 onMouseOver={e => e.currentTarget.style.boxShadow = 'var(--ns-shadow-md)'}
                 onMouseOut={e => e.currentTarget.style.boxShadow = 'var(--ns-shadow)'}
               >
                 <div className="flex-between">
                   <h3 style={{ fontSize: '1.0625rem', fontWeight: 600 }}>{c.name}</h3>
-                  <span className="badge badge-indigo">{c.class_code}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <span className="badge badge-indigo">{c.class_code}</span>
+                    <button
+                      onClick={(e) => handleDeleteClass(e, c.id, c.name)}
+                      title="Remove class"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--ns-gray-400)', padding: '2px 4px', borderRadius: '4px',
+                        fontSize: '1rem', lineHeight: 1, transition: 'color .15s',
+                      }}
+                      onMouseOver={e => e.currentTarget.style.color = 'var(--ns-red-600)'}
+                      onMouseOut={e => e.currentTarget.style.color = 'var(--ns-gray-400)'}
+                    >
+                      &#x2715;
+                    </button>
+                  </div>
                 </div>
                 <p className="text-sm text-muted mt-1">
                   {c.student_count} student{c.student_count !== 1 ? 's' : ''}

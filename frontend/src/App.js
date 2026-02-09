@@ -13,6 +13,7 @@ import StudentHome from './pages/StudentHome';
 import PracticeSession from './pages/PracticeSession';
 import SessionComplete from './pages/SessionComplete';
 import GoogleCallback from './pages/GoogleCallback';
+import SharedAssignment from './pages/SharedAssignment';
 
 function ProtectedRoute({ children, role }) {
   const { user, loading } = useAuth();
@@ -54,6 +55,9 @@ export default function App() {
       <Route path="/student" element={<ProtectedRoute role="student"><StudentHome /></ProtectedRoute>} />
       <Route path="/student/practice/:assignmentId" element={<ProtectedRoute role="student"><PracticeSession /></ProtectedRoute>} />
       <Route path="/student/complete/:sessionId" element={<ProtectedRoute role="student"><SessionComplete /></ProtectedRoute>} />
+
+      {/* Shared assignment — no login required */}
+      <Route path="/go/:shareToken" element={<SharedAssignment />} />
 
       {/* Default */}
       <Route path="*" element={<Navigate to="/login" />} />

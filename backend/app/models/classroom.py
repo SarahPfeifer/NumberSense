@@ -17,6 +17,7 @@ class Classroom(Base):
     class_code = Column(String(10), unique=True, nullable=False)
     teacher_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     clever_section_id = Column(String(255), unique=True, nullable=True)
+    google_course_id = Column(String(255), unique=True, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

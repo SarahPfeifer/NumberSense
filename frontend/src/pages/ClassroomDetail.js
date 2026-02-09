@@ -303,14 +303,33 @@ export default function ClassroomDetail() {
                           {a.time_limit_seconds && <span className="badge badge-yellow">{a.time_limit_seconds/60}m limit</span>}
                         </div>
 
+                        {/* Share link */}
+                        {a.share_token && (
+                          <div style={{ marginTop: '.75rem', display: 'flex', gap: '.5rem' }}>
+                            <button className="btn btn-secondary"
+                              style={{ fontSize: '.8125rem', flex: 1 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const url = `${window.location.origin}/go/${a.share_token}`;
+                                navigator.clipboard.writeText(url).then(() => {
+                                  const btn = e.currentTarget;
+                                  btn.textContent = 'Copied!';
+                                  setTimeout(() => { btn.textContent = 'Copy Student Link'; }, 2000);
+                                });
+                              }}>
+                              Copy Student Link
+                            </button>
+                          </div>
+                        )}
+
                         {/* Google Classroom status */}
                         {links.length > 0 ? (
-                          <div style={{ marginTop: '.75rem', padding: '.5rem .75rem', background: '#E8F5E9', borderRadius: 'var(--ns-radius)', fontSize: '.8125rem', color: '#2E7D32' }}>
+                          <div style={{ marginTop: '.5rem', padding: '.5rem .75rem', background: '#E8F5E9', borderRadius: 'var(--ns-radius)', fontSize: '.8125rem', color: '#2E7D32' }}>
                             Posted to: {links.map(l => l.course_name || 'Classroom').join(', ')}
                           </div>
                         ) : googleConnected ? (
-                          <button className="btn btn-secondary mt-2"
-                            style={{ fontSize: '.8125rem', width: '100%' }}
+                          <button className="btn btn-secondary"
+                            style={{ fontSize: '.8125rem', width: '100%', marginTop: '.5rem' }}
                             onClick={() => openPostToClassroom(a)}>
                             Post to Google Classroom
                           </button>

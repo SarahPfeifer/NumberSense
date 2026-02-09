@@ -46,6 +46,7 @@ class ApiService {
   listClassrooms() { return this.get('/classrooms'); }
   createClassroom(name) { return this.post('/classrooms', { name }); }
   getClassroom(id) { return this.get(`/classrooms/${id}`); }
+  deleteClassroom(id) { return this.del(`/classrooms/${id}`); }
   listStudents(classroomId) { return this.get(`/classrooms/${classroomId}/students`); }
   enrollStudent(classroomId, data) { return this.post(`/classrooms/${classroomId}/students`, data); }
   removeStudent(classroomId, studentId) { return this.del(`/classrooms/${classroomId}/students/${studentId}`); }
@@ -76,6 +77,7 @@ class ApiService {
   googleOAuthCallback(code) { return this.post('/google/oauth/callback', { code }); }
   googleDisconnect() { return this.post('/google/disconnect', {}); }
   googleListCourses() { return this.get('/google/classroom/courses'); }
+  googleImportCourses() { return this.post('/google/classroom/import-courses', {}); }
   googlePostAssignment(data) { return this.post('/google/classroom/post-assignment', data); }
   googleAssignmentLinks(assignmentId) { return this.get(`/google/classroom/assignment-links/${assignmentId}`); }
 }
